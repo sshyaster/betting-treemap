@@ -12,10 +12,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('');
-
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['polymarket', 'kalshi']);
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
-
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
@@ -61,11 +58,9 @@ export default function Dashboard() {
 
   const filteredMarkets = useMemo(() => {
     return markets.filter(m => {
-      const platformMatch = selectedPlatforms.includes(m.platform);
-      const categoryMatch = selectedCategories.length === 0 || selectedCategories.includes(m.category);
-      return platformMatch && categoryMatch;
+      return selectedCategories.length === 0 || selectedCategories.includes(m.category);
     });
-  }, [markets, selectedPlatforms, selectedCategories]);
+  }, [markets, selectedCategories]);
 
   const treemapData = useMemo(() => {
     return buildTreemapData(filteredMarkets, 'category');
@@ -118,10 +113,10 @@ export default function Dashboard() {
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-2xl font-semibold text-gray-900 mb-1">
-            Prediction Markets
+            Polymarket
           </h1>
           <p className="text-gray-500 text-sm">
-            Volume from Polymarket & Kalshi
+            Prediction market volumes
             <span className="ml-3 text-gray-400">
               Updated {lastUpdated}
             </span>
@@ -133,9 +128,6 @@ export default function Dashboard() {
 
         {/* Filters */}
         <FilterBar
-          platforms={['polymarket', 'kalshi']}
-          selectedPlatforms={selectedPlatforms}
-          onPlatformChange={setSelectedPlatforms}
           categories={categories}
           selectedCategories={selectedCategories}
           onCategoryChange={setSelectedCategories}
@@ -163,7 +155,7 @@ export default function Dashboard() {
 
         {/* Footer */}
         <div className="mt-6 text-center text-gray-400 text-xs">
-          Data from Polymarket & Kalshi APIs. Click any market to view details.
+          Data from Polymarket API. Click any market to view details.
         </div>
       </div>
     </div>

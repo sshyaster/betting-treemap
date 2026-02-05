@@ -1,9 +1,6 @@
 'use client';
 
 interface FilterBarProps {
-  platforms: string[];
-  selectedPlatforms: string[];
-  onPlatformChange: (platforms: string[]) => void;
   categories: string[];
   selectedCategories: string[];
   onCategoryChange: (categories: string[]) => void;
@@ -23,25 +20,12 @@ const CATEGORY_COLORS: Record<string, string> = {
 };
 
 export default function FilterBar({
-  platforms,
-  selectedPlatforms,
-  onPlatformChange,
   categories,
   selectedCategories,
   onCategoryChange,
   totalVolume,
   marketCount,
 }: FilterBarProps) {
-
-  const togglePlatform = (platform: string) => {
-    if (selectedPlatforms.includes(platform)) {
-      if (selectedPlatforms.length > 1) {
-        onPlatformChange(selectedPlatforms.filter(p => p !== platform));
-      }
-    } else {
-      onPlatformChange([...selectedPlatforms, platform]);
-    }
-  };
 
   const toggleCategory = (category: string) => {
     if (selectedCategories.includes(category)) {
@@ -70,24 +54,6 @@ export default function FilterBar({
             <div className="text-gray-400 text-xs uppercase tracking-wide mb-1">Markets</div>
             <div className="text-xl font-semibold text-gray-900">{marketCount}</div>
           </div>
-        </div>
-
-        {/* Platform Filters */}
-        <div className="flex items-center gap-2">
-          <span className="text-gray-500 text-sm mr-2">Platform</span>
-          {platforms.map(platform => (
-            <button
-              key={platform}
-              onClick={() => togglePlatform(platform)}
-              className={`px-3 py-1.5 rounded text-sm font-medium transition-all border ${
-                selectedPlatforms.includes(platform)
-                  ? 'bg-gray-900 text-white border-gray-900'
-                  : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
-              }`}
-            >
-              {platform === 'polymarket' ? 'Polymarket' : 'Kalshi'}
-            </button>
-          ))}
         </div>
 
         {/* Category Filters */}
