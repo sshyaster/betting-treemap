@@ -1,65 +1,94 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface CryptoPrice {
-  id: string;
   symbol: string;
-  name: string;
   price: number;
   change24h: number;
-  marketCap: number;
+  priceHistory: number[];
 }
 
+const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT', 'XRPUSDT', 'ADAUSDT'];
+const DISPLAY_NAMES: Record<string, string> = {
+  BTCUSDT: 'BTC',
+  ETHUSDT: 'ETH',
+  SOLUSDT: 'SOL',
+  DOGEUSDT: 'DOGE',
+  XRPUSDT: 'XRP',
+  ADAUSDT: 'ADA',
+};
+
+const MAX_HISTORY = 60; // Keep last 60 price points for chart
+
 export default function CryptoTicker() {
-  const [prices, setPrices] = useState<CryptoPrice[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState<string>('');
+  const [prices, setPrices] = useState<Record<string, CryptoPrice>>({});
+  const [connected, setConnected] = useState(false);
+  const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
-    async function fetchPrices() {
-      try {
-        const res = await fetch('/api/crypto');
-        if (!res.ok) throw new Error('Failed to fetch');
-        const data = await res.json();
-        setPrices(data.prices);
-        setLastUpdated(new Date(data.lastUpdated).toLocaleTimeString());
-      } catch (err) {
-        console.error('Crypto fetch error:', err);
-      } finally {
-        setLoading(false);
-      }
-    }
+    // Initialize prices
+    const initial: Record<string, CryptoPrice> = {};
+    SYMBOLS.forEach(s => {
+      initial[s] = { symbol: s, price: 0, change24h: 0, priceHistory: [] };
+    });
+    setPrices(initial);
 
-    fetchPrices();
-    const interval = setInterval(fetchPrices, 30000); // Update every 30s
-    return () => clearInterval(interval);
+    // Connect to Binance WebSocket
+    const streams = SYMBOLS.map(s => `${s.toLowerCase()}@ticker`).join('/');
+    const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${streams}`);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      setConnected(true);
+      console.log('Binance WebSocket connected');
+    };
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      const symbol = data.s; // Symbol like "BTCUSDT"
+      const price = parseFloat(data.c); // Current price
+      const change24h = parseFloat(data.P); // 24h change percent
+
+      setPrices(prev => {
+        const current = prev[symbol];
+        if (!current) return prev;
+
+        const newHistory = [...current.priceHistory, price].slice(-MAX_HISTORY);
+
+        return {
+          ...prev,
+          [symbol]: {
+            symbol,
+            price,
+            change24h,
+            priceHistory: newHistory,
+          },
+        };
+      });
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      setConnected(false);
+    };
+
+    ws.onclose = () => {
+      setConnected(false);
+      console.log('WebSocket closed');
+    };
+
+    return () => {
+      ws.close();
+    };
   }, []);
 
   const formatPrice = (price: number): string => {
     if (price >= 1000) return `$${price.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
     if (price >= 1) return `$${price.toFixed(2)}`;
-    if (price >= 0.01) return `$${price.toFixed(3)}`;
+    if (price >= 0.01) return `$${price.toFixed(4)}`;
     return `$${price.toFixed(6)}`;
   };
-
-  const formatMarketCap = (cap: number): string => {
-    if (cap >= 1e12) return `$${(cap / 1e12).toFixed(2)}T`;
-    if (cap >= 1e9) return `$${(cap / 1e9).toFixed(1)}B`;
-    if (cap >= 1e6) return `$${(cap / 1e6).toFixed(0)}M`;
-    return `$${cap.toFixed(0)}`;
-  };
-
-  if (loading) {
-    return (
-      <div className="bg-gray-800 rounded-lg p-4 mb-4">
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <span className="text-gray-400 text-sm">Loading crypto prices...</span>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="bg-gray-800 rounded-lg p-4 mb-4">
@@ -67,41 +96,88 @@ export default function CryptoTicker() {
         <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">
           Crypto Prices
         </h2>
-        <span className="text-xs text-gray-500">Updated: {lastUpdated}</span>
+        <div className="flex items-center gap-2">
+          <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+          <span className="text-xs text-gray-500">
+            {connected ? 'Live' : 'Connecting...'}
+          </span>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
-        {prices.map((coin) => (
-          <div
-            key={coin.id}
-            className="bg-gray-900 rounded-lg p-3 hover:bg-gray-850 transition-colors"
-          >
-            <div className="flex items-center gap-2 mb-1">
-              <CryptoIcon symbol={coin.symbol} />
-              <span className="font-semibold text-white text-sm">{coin.symbol}</span>
-            </div>
+        {SYMBOLS.map((symbol) => {
+          const coin = prices[symbol];
+          if (!coin || coin.price === 0) {
+            return (
+              <div key={symbol} className="bg-gray-900 rounded-lg p-3 animate-pulse">
+                <div className="h-4 bg-gray-700 rounded w-12 mb-2" />
+                <div className="h-6 bg-gray-700 rounded w-20" />
+              </div>
+            );
+          }
 
-            <div className="text-lg font-bold text-white">
-              {formatPrice(coin.price)}
-            </div>
+          return (
+            <div
+              key={symbol}
+              className="bg-gray-900 rounded-lg p-3 hover:bg-gray-850 transition-colors"
+            >
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <CryptoIcon symbol={DISPLAY_NAMES[symbol]} />
+                  <span className="font-semibold text-white text-sm">
+                    {DISPLAY_NAMES[symbol]}
+                  </span>
+                </div>
+                <span
+                  className={`text-xs font-medium ${
+                    coin.change24h >= 0 ? 'text-green-400' : 'text-red-400'
+                  }`}
+                >
+                  {coin.change24h >= 0 ? '+' : ''}
+                  {coin.change24h.toFixed(2)}%
+                </span>
+              </div>
 
-            <div className="flex items-center justify-between mt-1">
-              <span
-                className={`text-xs font-medium ${
-                  coin.change24h >= 0 ? 'text-green-400' : 'text-red-400'
-                }`}
-              >
-                {coin.change24h >= 0 ? '+' : ''}
-                {coin.change24h.toFixed(2)}%
-              </span>
-              <span className="text-xs text-gray-500">
-                {formatMarketCap(coin.marketCap)}
-              </span>
+              <div className="text-lg font-bold text-white mb-2">
+                {formatPrice(coin.price)}
+              </div>
+
+              {/* Mini sparkline chart */}
+              {coin.priceHistory.length > 1 && (
+                <Sparkline data={coin.priceHistory} positive={coin.change24h >= 0} />
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
+  );
+}
+
+function Sparkline({ data, positive }: { data: number[]; positive: boolean }) {
+  const min = Math.min(...data);
+  const max = Math.max(...data);
+  const range = max - min || 1;
+
+  const height = 24;
+  const width = 100;
+  const points = data.map((val, i) => {
+    const x = (i / (data.length - 1)) * width;
+    const y = height - ((val - min) / range) * height;
+    return `${x},${y}`;
+  }).join(' ');
+
+  return (
+    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
+      <polyline
+        points={points}
+        fill="none"
+        stroke={positive ? '#4ade80' : '#f87171'}
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
