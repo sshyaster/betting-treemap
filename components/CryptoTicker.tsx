@@ -34,9 +34,9 @@ export default function CryptoTicker() {
     });
     setPrices(initial);
 
-    // Connect to Binance WebSocket
+    // Connect to Binance WebSocket (combined streams)
     const streams = SYMBOLS.map(s => `${s.toLowerCase()}@ticker`).join('/');
-    const ws = new WebSocket(`wss://stream.binance.com:9443/ws/${streams}`);
+    const ws = new WebSocket(`wss://stream.binance.com:9443/stream?streams=${streams}`);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -45,7 +45,8 @@ export default function CryptoTicker() {
     };
 
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
+      const message = JSON.parse(event.data);
+      const data = message.data || message; // Handle both combined and single stream format
       const symbol = data.s; // Symbol like "BTCUSDT"
       const price = parseFloat(data.c); // Current price
       const change24h = parseFloat(data.P); // 24h change percent
