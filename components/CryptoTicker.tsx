@@ -3,84 +3,128 @@
 import { useState, useEffect, useRef } from 'react';
 
 interface CryptoPrice {
+  id: string;
   symbol: string;
   price: number;
   change24h: number;
   priceHistory: number[];
 }
 
-const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'SOLUSDT', 'DOGEUSDT', 'XRPUSDT', 'ADAUSDT'];
-const DISPLAY_NAMES: Record<string, string> = {
-  BTCUSDT: 'BTC',
-  ETHUSDT: 'ETH',
-  SOLUSDT: 'SOL',
-  DOGEUSDT: 'DOGE',
-  XRPUSDT: 'XRP',
-  ADAUSDT: 'ADA',
-};
+const COINS = [
+  { id: 'bitcoin', symbol: 'BTC' },
+  { id: 'ethereum', symbol: 'ETH' },
+  { id: 'solana', symbol: 'SOL' },
+  { id: 'dogecoin', symbol: 'DOGE' },
+  { id: 'xrp', symbol: 'XRP' },
+  { id: 'cardano', symbol: 'ADA' },
+];
 
-const MAX_HISTORY = 60; // Keep last 60 price points for chart
+const MAX_HISTORY = 60;
 
 export default function CryptoTicker() {
   const [prices, setPrices] = useState<Record<string, CryptoPrice>>({});
   const [connected, setConnected] = useState(false);
+  const pollRef = useRef<NodeJS.Timeout | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const reconnectRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    // Initialize prices
-    const initial: Record<string, CryptoPrice> = {};
-    SYMBOLS.forEach(s => {
-      initial[s] = { symbol: s, price: 0, change24h: 0, priceHistory: [] };
-    });
-    setPrices(initial);
+    async function fetchPrices() {
+      try {
+        const res = await fetch('/api/crypto', { cache: 'no-store' });
+        if (!res.ok) throw new Error('Failed to fetch crypto prices');
+        const data = await res.json();
 
-    // Connect to Binance WebSocket (combined streams)
-    const streams = SYMBOLS.map(s => `${s.toLowerCase()}@ticker`).join('/');
-    const ws = new WebSocket(`wss://stream.binance.com:9443/stream?streams=${streams}`);
-    wsRef.current = ws;
+        setPrices(prev => {
+          const updated: Record<string, CryptoPrice> = { ...prev };
 
-    ws.onopen = () => {
-      setConnected(true);
-      console.log('Binance WebSocket connected');
-    };
+          for (const coin of data.prices || []) {
+            const price = Number(coin.price) || 0;
+            const change24h = Number(coin.change24h) || 0;
+            const history = updated[coin.id]?.priceHistory || [];
+            const newHistory = [...history, price].slice(-MAX_HISTORY);
+            updated[coin.id] = {
+              id: coin.id,
+              symbol: coin.symbol,
+              price,
+              change24h,
+              priceHistory: newHistory.length > 0 ? newHistory : [price],
+            };
+          }
 
-    ws.onmessage = (event) => {
-      const message = JSON.parse(event.data);
-      const data = message.data || message; // Handle both combined and single stream format
-      const symbol = data.s; // Symbol like "BTCUSDT"
-      const price = parseFloat(data.c); // Current price
-      const change24h = parseFloat(data.P); // 24h change percent
+          return updated;
+        });
+        setConnected(true);
+      } catch (err) {
+        setConnected(false);
+        console.error('Failed to fetch initial prices:', err);
+      }
+    }
 
-      setPrices(prev => {
-        const current = prev[symbol];
-        if (!current) return prev;
+    function startPolling() {
+      if (pollRef.current) return;
+      pollRef.current = setInterval(fetchPrices, 30 * 1000);
+    }
 
-        const newHistory = [...current.priceHistory, price].slice(-MAX_HISTORY);
+    function stopPolling() {
+      if (pollRef.current) {
+        clearInterval(pollRef.current);
+        pollRef.current = null;
+      }
+    }
 
-        return {
-          ...prev,
-          [symbol]: {
-            symbol,
-            price,
-            change24h,
-            priceHistory: newHistory,
-          },
-        };
-      });
-    };
+    function connectWebSocket() {
+      const assets = COINS.map(c => c.id).join(',');
+      const ws = new WebSocket(`wss://ws.coincap.io/prices?assets=${assets}`);
+      wsRef.current = ws;
 
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      setConnected(false);
-    };
+      ws.onopen = () => {
+        setConnected(true);
+        stopPolling();
+      };
 
-    ws.onclose = () => {
-      setConnected(false);
-      console.log('WebSocket closed');
-    };
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+
+        setPrices(prev => {
+          const updated = { ...prev };
+
+          for (const [coinId, priceStr] of Object.entries(data)) {
+            const price = parseFloat(priceStr as string);
+            if (updated[coinId]) {
+              const newHistory = [...updated[coinId].priceHistory, price].slice(-MAX_HISTORY);
+              updated[coinId] = {
+                ...updated[coinId],
+                price,
+                priceHistory: newHistory,
+              };
+            }
+          }
+
+          return updated;
+        });
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        startPolling();
+      };
+
+      ws.onclose = () => {
+        setConnected(false);
+        startPolling();
+        reconnectRef.current = setTimeout(connectWebSocket, 3000);
+      };
+    }
+
+    fetchPrices();
+    startPolling();
+    connectWebSocket();
 
     return () => {
-      ws.close();
+      if (pollRef.current) clearInterval(pollRef.current);
+      wsRef.current?.close();
+      if (reconnectRef.current) clearTimeout(reconnectRef.current);
     };
   }, []);
 
@@ -98,7 +142,7 @@ export default function CryptoTicker() {
           Crypto Prices
         </h2>
         <div className="flex items-center gap-2">
-          <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
+          <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`} />
           <span className="text-xs text-gray-500">
             {connected ? 'Live' : 'Connecting...'}
           </span>
@@ -106,11 +150,12 @@ export default function CryptoTicker() {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
-        {SYMBOLS.map((symbol) => {
-          const coin = prices[symbol];
+        {COINS.map(({ id, symbol }) => {
+          const coin = prices[id];
+
           if (!coin || coin.price === 0) {
             return (
-              <div key={symbol} className="bg-gray-900 rounded-lg p-3 animate-pulse">
+              <div key={id} className="bg-gray-900 rounded-lg p-3 animate-pulse">
                 <div className="h-4 bg-gray-700 rounded w-12 mb-2" />
                 <div className="h-6 bg-gray-700 rounded w-20" />
               </div>
@@ -119,15 +164,13 @@ export default function CryptoTicker() {
 
           return (
             <div
-              key={symbol}
-              className="bg-gray-900 rounded-lg p-3 hover:bg-gray-850 transition-colors"
+              key={id}
+              className="bg-gray-900 rounded-lg p-3 transition-colors"
             >
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
-                  <CryptoIcon symbol={DISPLAY_NAMES[symbol]} />
-                  <span className="font-semibold text-white text-sm">
-                    {DISPLAY_NAMES[symbol]}
-                  </span>
+                  <CryptoIcon symbol={symbol} />
+                  <span className="font-semibold text-white text-sm">{symbol}</span>
                 </div>
                 <span
                   className={`text-xs font-medium ${
@@ -143,7 +186,6 @@ export default function CryptoTicker() {
                 {formatPrice(coin.price)}
               </div>
 
-              {/* Mini sparkline chart */}
               {coin.priceHistory.length > 1 && (
                 <Sparkline data={coin.priceHistory} positive={coin.change24h >= 0} />
               )}
@@ -162,6 +204,7 @@ function Sparkline({ data, positive }: { data: number[]; positive: boolean }) {
 
   const height = 24;
   const width = 100;
+
   const points = data.map((val, i) => {
     const x = (i / (data.length - 1)) * width;
     const y = height - ((val - min) / range) * height;
