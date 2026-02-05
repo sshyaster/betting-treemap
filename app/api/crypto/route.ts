@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 const COINGECKO_API = 'https://api.coingecko.com/api/v3';
 
 const COINS = ['bitcoin', 'ethereum', 'solana', 'dogecoin', 'xrp', 'cardano'];
