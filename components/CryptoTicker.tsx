@@ -11,14 +11,14 @@ interface CryptoPrice {
   priceHistory: number[];
 }
 
-// Kraken pairs
+// Kraken pairs - using their actual response key names
 const COINS = [
-  { id: 'bitcoin', symbol: 'BTC', pair: 'XBTUSD' },
-  { id: 'ethereum', symbol: 'ETH', pair: 'ETHUSD' },
-  { id: 'solana', symbol: 'SOL', pair: 'SOLUSD' },
-  { id: 'dogecoin', symbol: 'DOGE', pair: 'DOGEUSD' },
-  { id: 'xrp', symbol: 'XRP', pair: 'XRPUSD' },
-  { id: 'cardano', symbol: 'ADA', pair: 'ADAUSD' },
+  { id: 'bitcoin', symbol: 'BTC', pair: 'XBTUSD', resultKey: 'XXBTZUSD' },
+  { id: 'ethereum', symbol: 'ETH', pair: 'ETHUSD', resultKey: 'XETHZUSD' },
+  { id: 'solana', symbol: 'SOL', pair: 'SOLUSD', resultKey: 'SOLUSD' },
+  { id: 'dogecoin', symbol: 'DOGE', pair: 'DOGEUSD', resultKey: 'XDGUSD' },
+  { id: 'xrp', symbol: 'XRP', pair: 'XRPUSD', resultKey: 'XXRPZUSD' },
+  { id: 'cardano', symbol: 'ADA', pair: 'ADAUSD', resultKey: 'ADAUSD' },
 ];
 
 const MAX_HISTORY = 60;
@@ -46,12 +46,7 @@ export default function CryptoTicker() {
           const updated: Record<string, CryptoPrice> = {};
 
           for (const coin of COINS) {
-            // Kraken uses different key formats
-            const resultKey = Object.keys(data.result || {}).find(k =>
-              k.includes(coin.pair) || k === `X${coin.pair}` || k === coin.pair
-            );
-
-            const tickerData = resultKey ? data.result[resultKey] : null;
+            const tickerData = data.result?.[coin.resultKey];
 
             if (tickerData) {
               const price = parseFloat(tickerData.c?.[0]) || 0; // Last trade price
@@ -91,8 +86,8 @@ export default function CryptoTicker() {
     // Initial fetch
     fetchPrices();
 
-    // Poll every 2 seconds
-    intervalRef.current = setInterval(fetchPrices, 2000);
+    // Poll every 1 second
+    intervalRef.current = setInterval(fetchPrices, 1000);
 
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
