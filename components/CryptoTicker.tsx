@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 interface CryptoPrice {
   id: string;
@@ -11,117 +11,93 @@ interface CryptoPrice {
   priceHistory: number[];
 }
 
+// Kraken pairs
 const COINS = [
-  { id: 'bitcoin', symbol: 'BTC' },
-  { id: 'ethereum', symbol: 'ETH' },
-  { id: 'solana', symbol: 'SOL' },
-  { id: 'dogecoin', symbol: 'DOGE' },
-  { id: 'xrp', symbol: 'XRP' },
-  { id: 'cardano', symbol: 'ADA' },
+  { id: 'bitcoin', symbol: 'BTC', pair: 'XBTUSD' },
+  { id: 'ethereum', symbol: 'ETH', pair: 'ETHUSD' },
+  { id: 'solana', symbol: 'SOL', pair: 'SOLUSD' },
+  { id: 'dogecoin', symbol: 'DOGE', pair: 'DOGEUSD' },
+  { id: 'xrp', symbol: 'XRP', pair: 'XRPUSD' },
+  { id: 'cardano', symbol: 'ADA', pair: 'ADAUSD' },
 ];
 
-const MAX_HISTORY = 50;
+const MAX_HISTORY = 60;
 
 export default function CryptoTicker() {
   const [prices, setPrices] = useState<Record<string, CryptoPrice>>({});
   const [isLoaded, setIsLoaded] = useState(false);
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Fetch initial data with 24h change from CoinGecko
-  const fetchInitialData = useCallback(async () => {
-    try {
-      const ids = COINS.map(c => c.id).join(',');
-      const res = await fetch(
-        `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`
-      );
-      if (!res.ok) return;
-      const data = await res.json();
-
-      setPrices(prev => {
-        const updated: Record<string, CryptoPrice> = {};
-        for (const coin of COINS) {
-          const price = data[coin.id]?.usd || prev[coin.id]?.price || 0;
-          const change24h = data[coin.id]?.usd_24h_change || prev[coin.id]?.change24h || 0;
-          updated[coin.id] = {
-            id: coin.id,
-            symbol: coin.symbol,
-            price,
-            prevPrice: price,
-            change24h,
-            priceHistory: prev[coin.id]?.priceHistory || [price],
-          };
-        }
-        return updated;
-      });
-      setIsLoaded(true);
-    } catch (err) {
-      console.error('Initial fetch error:', err);
-    }
-  }, []);
-
-  // Connect to CoinCap WebSocket for real-time prices
-  const connectWebSocket = useCallback(() => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) return;
-
-    const assets = COINS.map(c => c.id).join(',');
-    const ws = new WebSocket(`wss://ws.coincap.io/prices?assets=${assets}`);
-    wsRef.current = ws;
-
-    ws.onmessage = (event) => {
+  useEffect(() => {
+    async function fetchPrices() {
       try {
-        const data = JSON.parse(event.data);
+        const pairs = COINS.map(c => c.pair).join(',');
+        const res = await fetch(
+          `https://api.kraken.com/0/public/Ticker?pair=${pairs}`,
+          { cache: 'no-store' }
+        );
+
+        if (!res.ok) return;
+        const data = await res.json();
+
+        if (data.error?.length > 0) return;
 
         setPrices(prev => {
-          const updated = { ...prev };
-          let hasChanges = false;
+          const updated: Record<string, CryptoPrice> = {};
 
-          for (const [coinId, priceStr] of Object.entries(data)) {
-            const price = parseFloat(priceStr as string);
-            if (updated[coinId] && price > 0) {
-              hasChanges = true;
-              const prevPrice = updated[coinId].price;
-              const newHistory = [...updated[coinId].priceHistory, price].slice(-MAX_HISTORY);
+          for (const coin of COINS) {
+            // Kraken uses different key formats
+            const resultKey = Object.keys(data.result || {}).find(k =>
+              k.includes(coin.pair) || k === `X${coin.pair}` || k === coin.pair
+            );
 
-              updated[coinId] = {
-                ...updated[coinId],
+            const tickerData = resultKey ? data.result[resultKey] : null;
+
+            if (tickerData) {
+              const price = parseFloat(tickerData.c?.[0]) || 0; // Last trade price
+              const open = parseFloat(tickerData.o) || price; // 24h open
+              const change24h = open > 0 ? ((price - open) / open) * 100 : 0;
+
+              const prevPrice = prev[coin.id]?.price || price;
+              const prevHistory = prev[coin.id]?.priceHistory || [];
+
+              // Only add to history if price changed
+              const newHistory = price !== prevHistory[prevHistory.length - 1]
+                ? [...prevHistory, price].slice(-MAX_HISTORY)
+                : prevHistory.length > 0 ? prevHistory : [price];
+
+              updated[coin.id] = {
+                id: coin.id,
+                symbol: coin.symbol,
                 price,
                 prevPrice,
+                change24h,
                 priceHistory: newHistory,
               };
+            } else if (prev[coin.id]) {
+              updated[coin.id] = prev[coin.id];
             }
           }
 
-          return hasChanges ? updated : prev;
+          return updated;
         });
+
+        setIsLoaded(true);
       } catch (err) {
-        // Silently ignore parse errors
+        console.error('Kraken fetch error:', err);
       }
-    };
+    }
 
-    ws.onclose = () => {
-      // Silently reconnect after 2 seconds
-      reconnectTimeout.current = setTimeout(connectWebSocket, 2000);
-    };
+    // Initial fetch
+    fetchPrices();
 
-    ws.onerror = () => {
-      ws.close();
-    };
-  }, []);
-
-  useEffect(() => {
-    fetchInitialData();
-    connectWebSocket();
-
-    // Refresh 24h change every 60 seconds
-    const interval = setInterval(fetchInitialData, 60000);
+    // Poll every 2 seconds
+    intervalRef.current = setInterval(fetchPrices, 2000);
 
     return () => {
-      clearInterval(interval);
-      if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
-      wsRef.current?.close();
+      if (intervalRef.current) clearInterval(intervalRef.current);
     };
-  }, [fetchInitialData, connectWebSocket]);
+  }, []);
 
   const formatPrice = (price: number): string => {
     if (price >= 1000) return `$${price.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
@@ -159,7 +135,11 @@ export default function CryptoTicker() {
           return (
             <div
               key={id}
-              className="bg-gray-50 rounded-lg p-3 border border-gray-100 transition-colors"
+              className={`bg-gray-50 rounded-lg p-3 border transition-all duration-150 ${
+                priceUp ? 'border-green-300 bg-green-50/50' :
+                priceDown ? 'border-red-300 bg-red-50/50' :
+                'border-gray-100'
+              }`}
             >
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
@@ -172,12 +152,12 @@ export default function CryptoTicker() {
                   }`}
                 >
                   {coin.change24h >= 0 ? '+' : ''}
-                  {coin.change24h.toFixed(1)}%
+                  {coin.change24h.toFixed(2)}%
                 </span>
               </div>
 
               <div
-                className={`text-lg font-semibold mb-2 transition-colors duration-300 ${
+                className={`text-lg font-semibold mb-2 transition-colors duration-150 ${
                   priceUp ? 'text-green-600' : priceDown ? 'text-red-500' : 'text-gray-900'
                 }`}
               >
@@ -212,7 +192,6 @@ function MiniChart({ data, positive }: { data: number[]; positive: boolean }) {
     return { x, y };
   });
 
-  // Simple line path
   const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
   const areaPath = linePath + ` L ${points[points.length - 1].x} ${height} L ${points[0].x} ${height} Z`;
 
@@ -222,7 +201,7 @@ function MiniChart({ data, positive }: { data: number[]; positive: boolean }) {
     <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
       <defs>
         <linearGradient id={`grad-${positive}`} x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.15" />
+          <stop offset="0%" stopColor={color} stopOpacity="0.2" />
           <stop offset="100%" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
@@ -238,7 +217,7 @@ function MiniChart({ data, positive }: { data: number[]; positive: boolean }) {
       <circle
         cx={points[points.length - 1].x}
         cy={points[points.length - 1].y}
-        r="2.5"
+        r="3"
         fill={color}
       />
     </svg>
