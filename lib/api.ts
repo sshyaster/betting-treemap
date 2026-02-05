@@ -39,12 +39,12 @@ export async function fetchPolymarketData(): Promise<Market[]> {
     const data = await response.json();
 
     return data
-      .filter((event: any) => event.volume24hr > 100) // Filter out inactive markets
+      .filter((event: any) => event.volume > 1000) // Filter out tiny markets
       .map((event: any) => ({
         id: `pm-${event.id}`,
         title: event.title || 'Untitled',
-        // Use 24hr volume for sizing (actual recent trading activity)
-        volume: event.volume24hr || 0,
+        // Use total volume to match what Polymarket shows on their site
+        volume: event.volume || 0,
         openInterest: event.liquidity || 0,
         category: categorize(event.title, event.slug),
         platform: 'polymarket' as const,
@@ -60,8 +60,9 @@ export async function fetchPolymarketData(): Promise<Market[]> {
 
 export async function fetchKalshiData(): Promise<Market[]> {
   try {
+    // Fetch without status filter (it's broken), filter client-side
     const response = await fetch(
-      `${KALSHI_API}/markets?limit=200&status=active`,
+      `${KALSHI_API}/markets?limit=500`,
       { next: { revalidate: 300 } }
     );
 
@@ -70,12 +71,12 @@ export async function fetchKalshiData(): Promise<Market[]> {
     const data = await response.json();
 
     return (data.markets || [])
-      .filter((market: any) => market.volume_24h > 100) // Use 24hr volume
+      .filter((market: any) => market.status === 'active' && market.volume > 0)
       .map((market: any) => ({
         id: `kalshi-${market.ticker}`,
         title: market.title || 'Untitled',
-        // Use 24hr volume for consistency with Polymarket
-        volume: market.volume_24h || 0,
+        // Use total volume (Kalshi 24h volume is often 0)
+        volume: market.volume || 0,
         openInterest: market.open_interest || 0,
         category: categorize(market.title, market.event_ticker),
         platform: 'kalshi' as const,

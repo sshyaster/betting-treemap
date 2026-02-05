@@ -54,7 +54,7 @@ export default function FilterBar({
         {/* Stats */}
         <div className="flex items-center gap-6">
           <div>
-            <div className="text-gray-400 text-xs uppercase tracking-wide">24h Volume</div>
+            <div className="text-gray-400 text-xs uppercase tracking-wide">Total Volume</div>
             <div className="text-2xl font-bold text-white">{formatVolume(totalVolume)}</div>
           </div>
           <div>
