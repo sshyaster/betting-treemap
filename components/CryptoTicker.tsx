@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 interface CryptoPrice {
   id: string;
   symbol: string;
   price: number;
+  prevPrice: number;
   change24h: number;
   priceHistory: number[];
 }
@@ -19,67 +20,108 @@ const COINS = [
   { id: 'cardano', symbol: 'ADA' },
 ];
 
-const MAX_HISTORY = 30;
+const MAX_HISTORY = 50;
 
 export default function CryptoTicker() {
   const [prices, setPrices] = useState<Record<string, CryptoPrice>>({});
   const [isLoaded, setIsLoaded] = useState(false);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeout = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    async function fetchPrices() {
+  // Fetch initial data with 24h change from CoinGecko
+  const fetchInitialData = useCallback(async () => {
+    try {
+      const ids = COINS.map(c => c.id).join(',');
+      const res = await fetch(
+        `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`
+      );
+      if (!res.ok) return;
+      const data = await res.json();
+
+      setPrices(prev => {
+        const updated: Record<string, CryptoPrice> = {};
+        for (const coin of COINS) {
+          const price = data[coin.id]?.usd || prev[coin.id]?.price || 0;
+          const change24h = data[coin.id]?.usd_24h_change || prev[coin.id]?.change24h || 0;
+          updated[coin.id] = {
+            id: coin.id,
+            symbol: coin.symbol,
+            price,
+            prevPrice: price,
+            change24h,
+            priceHistory: prev[coin.id]?.priceHistory || [price],
+          };
+        }
+        return updated;
+      });
+      setIsLoaded(true);
+    } catch (err) {
+      console.error('Initial fetch error:', err);
+    }
+  }, []);
+
+  // Connect to CoinCap WebSocket for real-time prices
+  const connectWebSocket = useCallback(() => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
+
+    const assets = COINS.map(c => c.id).join(',');
+    const ws = new WebSocket(`wss://ws.coincap.io/prices?assets=${assets}`);
+    wsRef.current = ws;
+
+    ws.onmessage = (event) => {
       try {
-        const ids = COINS.map(c => c.id).join(',');
-        const res = await fetch(
-          `https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true`,
-          { cache: 'no-store' }
-        );
-
-        if (!res.ok) throw new Error('Failed to fetch');
-        const data = await res.json();
+        const data = JSON.parse(event.data);
 
         setPrices(prev => {
-          const updated: Record<string, CryptoPrice> = {};
+          const updated = { ...prev };
+          let hasChanges = false;
 
-          for (const coin of COINS) {
-            const price = data[coin.id]?.usd || 0;
-            const change24h = data[coin.id]?.usd_24h_change || 0;
-            const prevHistory = prev[coin.id]?.priceHistory || [];
+          for (const [coinId, priceStr] of Object.entries(data)) {
+            const price = parseFloat(priceStr as string);
+            if (updated[coinId] && price > 0) {
+              hasChanges = true;
+              const prevPrice = updated[coinId].price;
+              const newHistory = [...updated[coinId].priceHistory, price].slice(-MAX_HISTORY);
 
-            // Only add to history if price changed
-            const lastPrice = prevHistory[prevHistory.length - 1];
-            const newHistory = lastPrice !== price
-              ? [...prevHistory, price].slice(-MAX_HISTORY)
-              : prevHistory.length > 0 ? prevHistory : [price];
-
-            updated[coin.id] = {
-              id: coin.id,
-              symbol: coin.symbol,
-              price,
-              change24h,
-              priceHistory: newHistory,
-            };
+              updated[coinId] = {
+                ...updated[coinId],
+                price,
+                prevPrice,
+                priceHistory: newHistory,
+              };
+            }
           }
 
-          return updated;
+          return hasChanges ? updated : prev;
         });
-
-        setIsLoaded(true);
       } catch (err) {
-        console.error('Crypto fetch error:', err);
+        // Silently ignore parse errors
       }
-    }
+    };
 
-    // Initial fetch
-    fetchPrices();
+    ws.onclose = () => {
+      // Silently reconnect after 2 seconds
+      reconnectTimeout.current = setTimeout(connectWebSocket, 2000);
+    };
 
-    // Poll every 10 seconds
-    intervalRef.current = setInterval(fetchPrices, 10000);
-
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
+    ws.onerror = () => {
+      ws.close();
     };
   }, []);
+
+  useEffect(() => {
+    fetchInitialData();
+    connectWebSocket();
+
+    // Refresh 24h change every 60 seconds
+    const interval = setInterval(fetchInitialData, 60000);
+
+    return () => {
+      clearInterval(interval);
+      if (reconnectTimeout.current) clearTimeout(reconnectTimeout.current);
+      wsRef.current?.close();
+    };
+  }, [fetchInitialData, connectWebSocket]);
 
   const formatPrice = (price: number): string => {
     if (price >= 1000) return `$${price.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
@@ -96,7 +138,7 @@ export default function CryptoTicker() {
             <div key={id} className="bg-gray-50 rounded-lg p-3 animate-pulse border border-gray-100">
               <div className="h-4 bg-gray-200 rounded w-12 mb-2" />
               <div className="h-6 bg-gray-200 rounded w-20 mb-2" />
-              <div className="h-8 bg-gray-100 rounded w-full" />
+              <div className="h-10 bg-gray-100 rounded w-full" />
             </div>
           ))}
         </div>
@@ -111,10 +153,13 @@ export default function CryptoTicker() {
           const coin = prices[id];
           if (!coin) return null;
 
+          const priceUp = coin.price > coin.prevPrice;
+          const priceDown = coin.price < coin.prevPrice;
+
           return (
             <div
               key={id}
-              className="bg-gray-50 rounded-lg p-3 border border-gray-100"
+              className="bg-gray-50 rounded-lg p-3 border border-gray-100 transition-colors"
             >
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
@@ -131,7 +176,11 @@ export default function CryptoTicker() {
                 </span>
               </div>
 
-              <div className="text-lg font-semibold text-gray-900 mb-2">
+              <div
+                className={`text-lg font-semibold mb-2 transition-colors duration-300 ${
+                  priceUp ? 'text-green-600' : priceDown ? 'text-red-500' : 'text-gray-900'
+                }`}
+              >
                 {formatPrice(coin.price)}
               </div>
 
@@ -157,54 +206,39 @@ function MiniChart({ data, positive }: { data: number[]; positive: boolean }) {
   const width = 100;
   const padding = 2;
 
-  // Create smooth path
   const points = data.map((val, i) => {
     const x = padding + (i / (data.length - 1)) * (width - padding * 2);
     const y = padding + (1 - (val - min) / range) * (height - padding * 2);
     return { x, y };
   });
 
-  // Create SVG path with smooth curves
-  let path = `M ${points[0].x} ${points[0].y}`;
-  for (let i = 1; i < points.length; i++) {
-    const prev = points[i - 1];
-    const curr = points[i];
-    const cpx = (prev.x + curr.x) / 2;
-    path += ` Q ${prev.x + (cpx - prev.x) * 0.5} ${prev.y}, ${cpx} ${(prev.y + curr.y) / 2}`;
-    path += ` Q ${cpx + (curr.x - cpx) * 0.5} ${curr.y}, ${curr.x} ${curr.y}`;
-  }
-
-  // Area fill path
-  const areaPath = path + ` L ${points[points.length - 1].x} ${height} L ${points[0].x} ${height} Z`;
+  // Simple line path
+  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
+  const areaPath = linePath + ` L ${points[points.length - 1].x} ${height} L ${points[0].x} ${height} Z`;
 
   const color = positive ? '#22c55e' : '#ef4444';
-  const fillColor = positive ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)';
 
   return (
     <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
       <defs>
-        <linearGradient id={`gradient-${positive ? 'up' : 'down'}`} x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.2" />
+        <linearGradient id={`grad-${positive}`} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.15" />
           <stop offset="100%" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
+      <path d={areaPath} fill={`url(#grad-${positive})`} />
       <path
-        d={areaPath}
-        fill={`url(#gradient-${positive ? 'up' : 'down'})`}
-      />
-      <path
-        d={path}
+        d={linePath}
         fill="none"
         stroke={color}
-        strokeWidth="2"
+        strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      {/* Current price dot */}
       <circle
         cx={points[points.length - 1].x}
         cy={points[points.length - 1].y}
-        r="3"
+        r="2.5"
         fill={color}
       />
     </svg>
