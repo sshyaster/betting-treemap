@@ -180,29 +180,29 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
         }
       })
       .transition(t as any)
-      .attr('x', d => d.x0)
-      .attr('y', d => d.y0)
-      .attr('width', d => Math.max(0, d.x1 - d.x0))
-      .attr('height', d => Math.max(0, d.y1 - d.y0))
-      .attr('fill', d => {
+      .attr('x', (d: any) => d.x0)
+      .attr('y', (d: any) => d.y0)
+      .attr('width', (d: any) => Math.max(0, d.x1 - d.x0))
+      .attr('height', (d: any) => Math.max(0, d.y1 - d.y0))
+      .attr('fill', (d: any) => {
         if (d.depth === 0) return '#ffffff';
         const color = getColor(d);
         return d3.color(color)?.brighter((d.depth - 1) * 0.2)?.toString() || color;
       })
-      .attr('stroke', d => d.depth === 0 ? 'none' : '#e0e0e0')
+      .attr('stroke', (d: any) => d.depth === 0 ? 'none' : '#e0e0e0')
       .attr('stroke-width', 1)
       .attr('rx', 2);
 
     // Update labels with transition
     allGroups.select<SVGTextElement>('text.node-label')
       .transition(t as any)
-      .attr('x', d => d.x0 + 6)
-      .attr('y', d => d.y0 + 17)
+      .attr('x', (d: any) => d.x0 + 6)
+      .attr('y', (d: any) => d.y0 + 17)
       .attr('fill', '#333')
-      .attr('font-size', d => d.children ? '12px' : '11px')
-      .attr('font-weight', d => d.children ? '500' : '400')
+      .attr('font-size', (d: any) => d.children ? '12px' : '11px')
+      .attr('font-weight', (d: any) => d.children ? '500' : '400')
       .attr('pointer-events', 'none')
-      .text(d => {
+      .text((d: any) => {
         if (d.depth === 0) return '';
         const rectWidth = d.x1 - d.x0;
         const rectHeight = d.y1 - d.y0;
@@ -222,12 +222,12 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
     // Volume text for leaf nodes
     allGroups.select<SVGTextElement>('text.node-volume')
       .transition(t as any)
-      .attr('x', d => d.x0 + 6)
-      .attr('y', d => d.y0 + 30)
+      .attr('x', (d: any) => d.x0 + 6)
+      .attr('y', (d: any) => d.y0 + 30)
       .attr('fill', '#666')
       .attr('font-size', '10px')
       .attr('pointer-events', 'none')
-      .text(d => {
+      .text((d: any) => {
         if (d.depth === 0 || d.children) return '';
         const rectWidth = d.x1 - d.x0;
         const rectHeight = d.y1 - d.y0;
