@@ -167,7 +167,7 @@ export default function Treemap({ data, width, height, onMarketClick }: TreemapP
         });
 
       // Label for each node
-      groups.each(function(d: any) {
+      groups.each(function(this: SVGGElement, d: any) {
         const g = d3.select(this);
         const rectWidth = d.x1 - d.x0;
         const rectHeight = d.y1 - d.y0;
