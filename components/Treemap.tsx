@@ -120,7 +120,7 @@ export default function Treemap({ data, width, height, onMarketClick }: TreemapP
         .attr('stroke-width', 1)
         .attr('rx', 2)
         .attr('cursor', (d: any) => (d.children || d.data?.market || d.data?.isOthers) ? 'pointer' : 'default')
-        .on('mouseenter', function(event: any, d: any) {
+        .on('mouseenter', function(this: SVGRectElement, event: any, d: any) {
           d3.select(this).attr('stroke', '#fff').attr('stroke-width', 2);
 
           const isOthers = d.data?.isOthers;
@@ -140,7 +140,7 @@ export default function Treemap({ data, width, height, onMarketClick }: TreemapP
         .on('mousemove', (event: any) => {
           setTooltip(prev => prev ? { ...prev, x: event.pageX, y: event.pageY } : null);
         })
-        .on('mouseleave', function() {
+        .on('mouseleave', function(this: SVGRectElement) {
           d3.select(this).attr('stroke', '#1a1a2e').attr('stroke-width', 1);
           setTooltip(null);
         })
