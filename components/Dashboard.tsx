@@ -5,7 +5,7 @@ import Treemap from './Treemap';
 import FilterBar from './FilterBar';
 import CryptoTicker from './CryptoTicker';
 import { Market, ApiResponse } from '@/lib/types';
-import { buildTreemapData, formatVolume, CATEGORY_COLORS } from '@/lib/utils';
+import { buildTreemapData } from '@/lib/utils';
 
 export default function Dashboard() {
   const [markets, setMarkets] = useState<Market[]>([]);
@@ -18,7 +18,6 @@ export default function Dashboard() {
 
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
-  // Fetch data
   useEffect(() => {
     async function fetchData() {
       try {
@@ -38,32 +37,28 @@ export default function Dashboard() {
     }
 
     fetchData();
-    const interval = setInterval(fetchData, 5 * 60 * 1000); // Refresh every 5 min
+    const interval = setInterval(fetchData, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
-  // Handle resize
   useEffect(() => {
     function updateDimensions() {
       const container = document.getElementById('treemap-container');
       if (container) {
         const width = container.clientWidth || window.innerWidth - 40;
-        const height = Math.max(600, window.innerHeight - 300);
-        console.log('Dimensions:', width, height);
+        const height = Math.max(600, window.innerHeight - 320);
         setDimensions({ width, height });
       }
     }
 
-    // Delay to ensure DOM is ready
     const timer = setTimeout(updateDimensions, 100);
     window.addEventListener('resize', updateDimensions);
     return () => {
       clearTimeout(timer);
       window.removeEventListener('resize', updateDimensions);
     };
-  }, [loading]); // Re-run when loading changes
+  }, [loading]);
 
-  // Filter and process data
   const filteredMarkets = useMemo(() => {
     return markets.filter(m => {
       const platformMatch = selectedPlatforms.includes(m.platform);
@@ -73,9 +68,7 @@ export default function Dashboard() {
   }, [markets, selectedPlatforms, selectedCategories]);
 
   const treemapData = useMemo(() => {
-    const data = buildTreemapData(filteredMarkets, 'category');
-    console.log('TreemapData:', data, 'filteredMarkets:', filteredMarkets.length);
-    return data;
+    return buildTreemapData(filteredMarkets, 'category');
   }, [filteredMarkets]);
 
   const totalVolume = useMemo(() => {
@@ -93,10 +86,10 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-900">
+      <div className="flex items-center justify-center h-screen bg-gray-50">
         <div className="text-center">
-          <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
-          <div className="text-gray-400">Loading market data...</div>
+          <div className="w-12 h-12 border-3 border-gray-300 border-t-gray-600 rounded-full animate-spin mx-auto mb-4" />
+          <div className="text-gray-500 text-sm">Loading market data...</div>
         </div>
       </div>
     );
@@ -104,13 +97,13 @@ export default function Dashboard() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-900">
+      <div className="flex items-center justify-center h-screen bg-gray-50">
         <div className="text-center">
-          <div className="text-red-500 text-xl mb-2">Error</div>
-          <div className="text-gray-400">{error}</div>
+          <div className="text-red-500 text-lg mb-2">Error</div>
+          <div className="text-gray-500 text-sm mb-4">{error}</div>
           <button
             onClick={() => window.location.reload()}
-            className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            className="px-4 py-2 bg-gray-900 text-white text-sm rounded hover:bg-gray-800"
           >
             Retry
           </button>
@@ -120,17 +113,17 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-4">
-      <div className="max-w-[1800px] mx-auto">
+    <div className="min-h-screen bg-gray-50">
+      <div className="max-w-[1800px] mx-auto p-6">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-3xl font-bold mb-2">
-            Prediction Markets Volume
+          <h1 className="text-2xl font-semibold text-gray-900 mb-1">
+            Prediction Markets
           </h1>
-          <p className="text-gray-400">
-            Live betting market volumes from Polymarket & Kalshi
-            <span className="ml-3 text-gray-500 text-sm">
-              Last updated: {lastUpdated}
+          <p className="text-gray-500 text-sm">
+            Volume from Polymarket & Kalshi
+            <span className="ml-3 text-gray-400">
+              Updated {lastUpdated}
             </span>
           </p>
         </div>
@@ -158,33 +151,19 @@ export default function Dashboard() {
               width={dimensions.width}
               height={dimensions.height}
               onMarketClick={handleMarketClick}
+              totalVolume={totalVolume}
             />
           )}
           {dimensions.width === 0 && (
-            <div className="flex items-center justify-center h-96 text-gray-500">
+            <div className="flex items-center justify-center h-96 text-gray-400 text-sm">
               Loading treemap...
             </div>
           )}
         </div>
 
-        {/* Legend */}
-        <div className="mt-4 flex items-center justify-center gap-6 flex-wrap text-sm">
-          {categories.slice(0, 8).map(cat => (
-            <div key={cat} className="flex items-center gap-2">
-              <div
-                className="w-4 h-4 rounded"
-                style={{ backgroundColor: CATEGORY_COLORS[cat] || '#666' }}
-              />
-              <span className="text-gray-400">{cat}</span>
-            </div>
-          ))}
-        </div>
-
         {/* Footer */}
-        <div className="mt-6 text-center text-gray-500 text-sm">
-          Data from Polymarket & Kalshi APIs. Box size = trading volume.
-          <br />
-          Click any market to view on the original platform.
+        <div className="mt-6 text-center text-gray-400 text-xs">
+          Data from Polymarket & Kalshi APIs. Click any market to view details.
         </div>
       </div>
     </div>

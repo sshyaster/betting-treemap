@@ -136,14 +136,14 @@ export default function CryptoTicker() {
   };
 
   return (
-    <div className="bg-gray-800 rounded-lg p-4 mb-4">
+    <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide">
+        <h2 className="text-xs font-medium text-gray-400 uppercase tracking-wide">
           Crypto Prices
         </h2>
         <div className="flex items-center gap-2">
           <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500 animate-pulse' : 'bg-yellow-500'}`} />
-          <span className="text-xs text-gray-500">
+          <span className="text-xs text-gray-400">
             {connected ? 'Live' : 'Connecting...'}
           </span>
         </div>
@@ -155,9 +155,9 @@ export default function CryptoTicker() {
 
           if (!coin || coin.price === 0) {
             return (
-              <div key={id} className="bg-gray-900 rounded-lg p-3 animate-pulse">
-                <div className="h-4 bg-gray-700 rounded w-12 mb-2" />
-                <div className="h-6 bg-gray-700 rounded w-20" />
+              <div key={id} className="bg-gray-50 rounded-lg p-3 animate-pulse border border-gray-100">
+                <div className="h-4 bg-gray-200 rounded w-12 mb-2" />
+                <div className="h-6 bg-gray-200 rounded w-20" />
               </div>
             );
           }
@@ -165,16 +165,16 @@ export default function CryptoTicker() {
           return (
             <div
               key={id}
-              className="bg-gray-900 rounded-lg p-3 transition-colors"
+              className="bg-gray-50 rounded-lg p-3 transition-colors border border-gray-100 hover:border-gray-200"
             >
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
                   <CryptoIcon symbol={symbol} />
-                  <span className="font-semibold text-white text-sm">{symbol}</span>
+                  <span className="font-medium text-gray-900 text-sm">{symbol}</span>
                 </div>
                 <span
                   className={`text-xs font-medium ${
-                    coin.change24h >= 0 ? 'text-green-400' : 'text-red-400'
+                    coin.change24h >= 0 ? 'text-green-600' : 'text-red-500'
                   }`}
                 >
                   {coin.change24h >= 0 ? '+' : ''}
@@ -182,7 +182,7 @@ export default function CryptoTicker() {
                 </span>
               </div>
 
-              <div className="text-lg font-bold text-white mb-2">
+              <div className="text-lg font-semibold text-gray-900 mb-2">
                 {formatPrice(coin.price)}
               </div>
 
