@@ -24,15 +24,28 @@ interface TooltipData {
   y: number;
 }
 
-const CATEGORY_TINTS: Record<string, string> = {
-  'Politics': '#e8f5e9',
-  'Sports': '#e3f2fd',
-  'Crypto': '#fce4ec',
-  'Economics': '#f1f8e9',
-  'Tech': '#f3e5f5',
-  'Entertainment': '#fff3e0',
-  'World': '#e0f2f1',
-  'Other': '#fafafa',
+// Leaf node fills (slightly more saturated)
+const CATEGORY_FILLS: Record<string, string> = {
+  'Politics': '#d5ecd7',
+  'Sports': '#cde4f6',
+  'Crypto': '#f5d0d8',
+  'Economics': '#ddebc2',
+  'Tech': '#e4cff0',
+  'Entertainment': '#fce0c3',
+  'World': '#c6e6e3',
+  'Other': '#e8ddf0',
+};
+
+// Parent node fills (lighter wash of same hue)
+const CATEGORY_BG: Record<string, string> = {
+  'Politics': '#edf7ee',
+  'Sports': '#e9f1fa',
+  'Crypto': '#fbecef',
+  'Economics': '#f0f5e3',
+  'Tech': '#f3eaf8',
+  'Entertainment': '#fef3e8',
+  'World': '#e6f3f1',
+  'Other': '#f3eef8',
 };
 
 export default function Treemap({ data, width, height, onMarketClick, totalVolume, timeframeLabel = '24h' }: TreemapProps) {
@@ -46,13 +59,12 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
       node = node.parent;
     }
     const category = node?.data?.name || '';
-    const base = CATEGORY_TINTS[category] || '#fafafa';
 
-    // Leaf nodes get the tint, parent nodes get white
+    // Leaf nodes get the fill color, parent nodes get the lighter bg
     if (!d.children) {
-      return base;
+      return CATEGORY_FILLS[category] || CATEGORY_FILLS['Other'];
     }
-    return '#ffffff';
+    return CATEGORY_BG[category] || CATEGORY_BG['Other'];
   }, []);
 
   useEffect(() => {
