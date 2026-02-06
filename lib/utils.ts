@@ -1,4 +1,4 @@
-import { Market, TreemapData } from './types';
+import { Market, TreemapData, Timeframe } from './types';
 
 export function formatVolume(value: number): string {
   if (value >= 1e9) return `$${(value / 1e9).toFixed(2)}B`;
@@ -7,32 +7,15 @@ export function formatVolume(value: number): string {
   return `$${value.toFixed(0)}`;
 }
 
-// Category colors
-export const CATEGORY_COLORS: Record<string, string> = {
-  'Politics': '#8b7355',
-  'Sports': '#c17f59',
-  'Crypto': '#d4a84b',
-  'Economics': '#7a9e7e',
-  'Tech': '#8b7cb3',
-  'Entertainment': '#c97b84',
-  'World': '#6b8cae',
-  'Other': '#808080',
-  // Subcategories
-  'US Elections': '#9c8465',
-  'Foreign Policy': '#7a6b5a',
-  'Legislature': '#a08060',
-  'Appointments': '#b09070',
-  'NBA': '#d4956b',
-  'NFL': '#c4855b',
-  'Soccer': '#b4754b',
-  'Esports': '#a4653b',
-  'Bitcoin': '#e4b856',
-  'Ethereum': '#c49836',
-  'Altcoins': '#a47816',
-  'Fed': '#6a8e6e',
-  'Inflation': '#5a7e5e',
-  '+others': '#606060',
-};
+export function getVolumeForTimeframe(market: Market, timeframe: Timeframe): number {
+  switch (timeframe) {
+    case '24h': return market.volume24hr;
+    case '1w': return market.volume1wk;
+    case '1m': return market.volume1mo;
+    case '1y': return market.volume1yr;
+    case 'all': return market.volumeAll;
+  }
+}
 
 // Subcategory mapping
 const SUBCATEGORY_KEYWORDS: Record<string, Record<string, string[]>> = {
@@ -74,11 +57,15 @@ function getSubcategory(market: Market): string {
   return 'Other';
 }
 
-export function buildNestedTreemapData(markets: Market[]): TreemapData {
+export function buildTreemapData(markets: Market[], timeframe: Timeframe = '24h'): TreemapData {
   // Group by category -> subcategory -> markets
   const categoryMap = new Map<string, Map<string, Market[]>>();
 
   for (const market of markets) {
+    // Skip markets with 0 volume in the selected timeframe
+    const vol = getVolumeForTimeframe(market, timeframe);
+    if (vol <= 0) continue;
+
     if (!categoryMap.has(market.category)) {
       categoryMap.set(market.category, new Map());
     }
@@ -100,10 +87,10 @@ export function buildNestedTreemapData(markets: Market[]): TreemapData {
     let categoryVolume = 0;
 
     for (const [subcatName, subcatMarkets] of subcatMap) {
-      // Sort markets by volume
-      subcatMarkets.sort((a, b) => b.volume - a.volume);
+      // Sort markets by volume for this timeframe
+      subcatMarkets.sort((a, b) => getVolumeForTimeframe(b, timeframe) - getVolumeForTimeframe(a, timeframe));
 
-      const subcatVolume = subcatMarkets.reduce((sum, m) => sum + m.volume, 0);
+      const subcatVolume = subcatMarkets.reduce((sum, m) => sum + getVolumeForTimeframe(m, timeframe), 0);
       categoryVolume += subcatVolume;
 
       // Take top markets, group rest as "+X others"
@@ -113,35 +100,31 @@ export function buildNestedTreemapData(markets: Market[]): TreemapData {
 
       const marketChildren: TreemapData[] = visibleMarkets.map(m => ({
         name: m.title,
-        value: m.volume,
+        value: getVolumeForTimeframe(m, timeframe),
         market: m,
         category: categoryName,
       }));
 
-      // Add "+X others" node if there are hidden markets
       if (hiddenMarkets.length > 0) {
-        const othersVolume = hiddenMarkets.reduce((sum, m) => sum + m.volume, 0);
+        const othersVolume = hiddenMarkets.reduce((sum, m) => sum + getVolumeForTimeframe(m, timeframe), 0);
         marketChildren.push({
           name: `+${hiddenMarkets.length} others`,
           value: othersVolume,
           category: categoryName,
-          isOthers: true,
-          hiddenMarkets: hiddenMarkets,
-        } as TreemapData & { isOthers: boolean; hiddenMarkets: Market[] });
+        });
       }
 
       subcatChildren.push({
         name: subcatName,
         children: marketChildren,
         category: categoryName,
-        totalVolume: subcatVolume,
-      } as TreemapData & { totalVolume: number });
+      });
     }
 
     // Sort subcategories by volume
     subcatChildren.sort((a, b) => {
-      const aVol = (a as any).totalVolume || a.children?.reduce((s, c) => s + (c.value || 0), 0) || 0;
-      const bVol = (b as any).totalVolume || b.children?.reduce((s, c) => s + (c.value || 0), 0) || 0;
+      const aVol = a.children?.reduce((s, c) => s + (c.value || 0), 0) || 0;
+      const bVol = b.children?.reduce((s, c) => s + (c.value || 0), 0) || 0;
       return bVol - aVol;
     });
 
@@ -149,14 +132,13 @@ export function buildNestedTreemapData(markets: Market[]): TreemapData {
       name: categoryName,
       children: subcatChildren,
       category: categoryName,
-      totalVolume: categoryVolume,
-    } as TreemapData & { totalVolume: number });
+    });
   }
 
   // Sort categories by volume
   categoryChildren.sort((a, b) => {
-    const aVol = (a as any).totalVolume || 0;
-    const bVol = (b as any).totalVolume || 0;
+    const aVol = a.children?.reduce((s, sub) => s + (sub.children?.reduce((s2, c) => s2 + (c.value || 0), 0) || 0), 0) || 0;
+    const bVol = b.children?.reduce((s, sub) => s + (sub.children?.reduce((s2, c) => s2 + (c.value || 0), 0) || 0), 0) || 0;
     return bVol - aVol;
   });
 
@@ -164,12 +146,4 @@ export function buildNestedTreemapData(markets: Market[]): TreemapData {
     name: 'All Markets',
     children: categoryChildren,
   };
-}
-
-// Legacy function for compatibility
-export function buildTreemapData(
-  markets: Market[],
-  groupBy: 'category' | 'platform' = 'category'
-): TreemapData {
-  return buildNestedTreemapData(markets);
 }

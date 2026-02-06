@@ -3,14 +3,23 @@
 import { useState, useEffect, useMemo } from 'react';
 import Treemap from './Treemap';
 import CryptoTicker from './CryptoTicker';
-import { Market, ApiResponse } from '@/lib/types';
-import { buildTreemapData } from '@/lib/utils';
+import { Market, ApiResponse, Timeframe } from '@/lib/types';
+import { buildTreemapData, getVolumeForTimeframe } from '@/lib/utils';
+
+const TIMEFRAMES: { key: Timeframe; label: string }[] = [
+  { key: '24h', label: '24h' },
+  { key: '1w', label: '1W' },
+  { key: '1m', label: '1M' },
+  { key: '1y', label: '1Y' },
+  { key: 'all', label: 'All' },
+];
 
 export default function Dashboard() {
   const [markets, setMarkets] = useState<Market[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('');
+  const [timeframe, setTimeframe] = useState<Timeframe>('24h');
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
@@ -55,12 +64,12 @@ export default function Dashboard() {
   }, [loading]);
 
   const treemapData = useMemo(() => {
-    return buildTreemapData(markets);
-  }, [markets]);
+    return buildTreemapData(markets, timeframe);
+  }, [markets, timeframe]);
 
   const totalVolume = useMemo(() => {
-    return markets.reduce((sum, m) => sum + m.volume, 0);
-  }, [markets]);
+    return markets.reduce((sum, m) => sum + getVolumeForTimeframe(m, timeframe), 0);
+  }, [markets, timeframe]);
 
   const handleMarketClick = (market: Market) => {
     window.open(market.url, '_blank');
@@ -104,8 +113,25 @@ export default function Dashboard() {
               Prediction Markets
             </h1>
             <p className="text-gray-400 text-xs mt-0.5">
-              24h volume distribution &middot; Updated {lastUpdated}
+              Volume distribution &middot; Updated {lastUpdated}
             </p>
+          </div>
+
+          {/* Timeframe Selector */}
+          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+            {TIMEFRAMES.map(tf => (
+              <button
+                key={tf.key}
+                onClick={() => setTimeframe(tf.key)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
+                  timeframe === tf.key
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {tf.label}
+              </button>
+            ))}
           </div>
         </div>
 
@@ -121,6 +147,7 @@ export default function Dashboard() {
               height={dimensions.height}
               onMarketClick={handleMarketClick}
               totalVolume={totalVolume}
+              timeframeLabel={TIMEFRAMES.find(t => t.key === timeframe)?.label || '24h'}
             />
           )}
           {dimensions.width === 0 && (

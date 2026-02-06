@@ -11,6 +11,7 @@ interface TreemapProps {
   height: number;
   onMarketClick?: (market: Market) => void;
   totalVolume: number;
+  timeframeLabel?: string;
 }
 
 interface TooltipData {
@@ -34,7 +35,7 @@ const CATEGORY_TINTS: Record<string, string> = {
   'Other': '#fafafa',
 };
 
-export default function Treemap({ data, width, height, onMarketClick, totalVolume }: TreemapProps) {
+export default function Treemap({ data, width, height, onMarketClick, totalVolume, timeframeLabel = '24h' }: TreemapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
 
@@ -200,7 +201,7 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
       {/* Header */}
       <div className="bg-white border border-gray-300 border-b-0 px-4 py-2 flex items-center justify-between">
         <div className="text-sm font-semibold text-gray-900">
-          Polymarket 24h Volume{' '}
+          Polymarket {timeframeLabel} Volume{' '}
           <span className="font-bold">{formatVolume(totalVolume)}</span>
         </div>
       </div>

@@ -1,7 +1,14 @@
+export type Timeframe = '24h' | '1w' | '1m' | '1y' | 'all';
+
 export interface Market {
   id: string;
   title: string;
   volume: number;
+  volume24hr: number;
+  volume1wk: number;
+  volume1mo: number;
+  volume1yr: number;
+  volumeAll: number;
   openInterest: number;
   category: string;
   platform: 'polymarket' | 'kalshi';
