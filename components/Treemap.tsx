@@ -51,29 +51,51 @@ const CATEGORY_BG: Record<string, string> = {
 export default function Treemap({ data, width, height, onMarketClick, totalVolume, timeframeLabel = '24h' }: TreemapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
+  const [viewStack, setViewStack] = useState<TreemapData[]>([data]);
 
-  const getTint = useCallback((d: d3.HierarchyRectangularNode<TreemapData>): string => {
-    // Find category ancestor (depth 1)
+  const currentView = viewStack[viewStack.length - 1];
+
+  useEffect(() => {
+    setViewStack([data]);
+  }, [data]);
+
+  const drillDown = useCallback((node: TreemapData) => {
+    if (node.children && node.children.length > 0) {
+      setViewStack(prev => [...prev, node]);
+    }
+  }, []);
+
+  const goBack = useCallback((index: number) => {
+    setViewStack(prev => prev.slice(0, index + 1));
+  }, []);
+
+  const getCategoryName = useCallback((d: d3.HierarchyRectangularNode<TreemapData>): string => {
     let node: d3.HierarchyRectangularNode<TreemapData> | null = d;
     while (node && node.depth > 1) {
       node = node.parent;
     }
-    const category = node?.data?.name || '';
-
-    // Leaf nodes get the fill color, parent nodes get the lighter bg
-    if (!d.children) {
-      return CATEGORY_FILLS[category] || CATEGORY_FILLS['Other'];
-    }
-    return CATEGORY_BG[category] || CATEGORY_BG['Other'];
+    return node?.data?.name || '';
   }, []);
 
+  const getTint = useCallback((d: d3.HierarchyRectangularNode<TreemapData>): string => {
+    const category = getCategoryName(d);
+
+    // Also check the data's own category field (for drilled-down views)
+    const cat = category || d.data?.category || '';
+
+    if (!d.children) {
+      return CATEGORY_FILLS[cat] || CATEGORY_FILLS['Other'];
+    }
+    return CATEGORY_BG[cat] || CATEGORY_BG['Other'];
+  }, [getCategoryName]);
+
   useEffect(() => {
-    if (!svgRef.current || !data || width === 0 || height === 0) return;
+    if (!svgRef.current || !currentView || width === 0 || height === 0) return;
 
     const svg = d3.select(svgRef.current);
     svg.selectAll('*').remove();
 
-    const root = d3.hierarchy(data)
+    const root = d3.hierarchy(currentView)
       .sum(d => d.value || 0)
       .sort((a, b) => (b.value || 0) - (a.value || 0));
 
@@ -105,7 +127,7 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
       .attr('fill', d => getTint(d))
       .attr('stroke', d => d.depth === 1 ? '#333' : '#bbb')
       .attr('stroke-width', d => d.depth === 1 ? 1.5 : 0.5)
-      .attr('cursor', d => (d.data?.market || d.children) ? 'pointer' : 'default')
+      .attr('cursor', 'pointer')
       .on('mouseenter', function(event: MouseEvent, d) {
         d3.select(this).attr('stroke', '#000').attr('stroke-width', 2);
 
@@ -137,10 +159,12 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
         const nodeData = d.data as any;
         if (nodeData?.market && onMarketClick) {
           onMarketClick(nodeData.market);
+        } else if (d.children && d.children.length > 0) {
+          drillDown(d.data);
         }
       });
 
-    // Header labels for category + subcategory nodes (nodes with children)
+    // Header labels for nodes with children
     groups.filter(d => !!d.children)
       .append('text')
       .attr('x', d => d.x0 + 4)
@@ -161,7 +185,7 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
         return name;
       });
 
-    // Leaf node labels (markets)
+    // Leaf node labels
     groups.filter(d => !d.children)
       .each(function(d) {
         const g = d3.select(this);
@@ -174,7 +198,6 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
         const maxChars = Math.floor(w / 6.5);
         const displayName = name.length > maxChars ? name.slice(0, maxChars - 1) + '…' : name;
 
-        // Title
         g.append('text')
           .attr('x', d.x0 + 4)
           .attr('y', d.y0 + 14)
@@ -184,12 +207,11 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
           .attr('pointer-events', 'none')
           .text(displayName);
 
-        // Volume (if enough space)
         if (h >= 30 && w >= 45) {
           g.append('text')
             .attr('x', d.x0 + 4)
             .attr('y', d.y0 + 26)
-            .attr('fill', '#888')
+            .attr('fill', '#666')
             .attr('font-size', '10px')
             .attr('pointer-events', 'none')
             .text(formatVolume(d.value || 0));
@@ -206,15 +228,32 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
       .attr('stroke', '#333')
       .attr('stroke-width', 1.5);
 
-  }, [data, width, height, onMarketClick, totalVolume, getTint]);
+  }, [currentView, width, height, onMarketClick, totalVolume, getTint, drillDown]);
 
   return (
     <div className="relative">
-      {/* Header */}
+      {/* Breadcrumb header */}
       <div className="bg-white border border-gray-300 border-b-0 px-4 py-2 flex items-center justify-between">
-        <div className="text-sm font-semibold text-gray-900">
-          Polymarket {timeframeLabel} Volume{' '}
-          <span className="font-bold">{formatVolume(totalVolume)}</span>
+        <div className="flex items-center gap-1 text-sm">
+          {viewStack.map((view, index) => (
+            <span key={index} className="flex items-center">
+              {index > 0 && <span className="text-gray-400 mx-1">/</span>}
+              <button
+                onClick={() => goBack(index)}
+                className={`hover:underline ${
+                  index === viewStack.length - 1
+                    ? 'text-gray-900 font-semibold'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                {view.name || 'All Markets'}
+              </button>
+            </span>
+          ))}
+        </div>
+        <div className="text-sm text-gray-600">
+          {timeframeLabel} Volume{' '}
+          <span className="font-bold text-gray-900">{formatVolume(totalVolume)}</span>
         </div>
       </div>
 
