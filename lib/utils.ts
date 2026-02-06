@@ -106,10 +106,14 @@ export function buildTreemapData(markets: Market[], timeframe: Timeframe = '24h'
       }));
 
       if (hiddenMarkets.length > 0) {
-        const othersVolume = hiddenMarkets.reduce((sum, m) => sum + getVolumeForTimeframe(m, timeframe), 0);
         marketChildren.push({
           name: `+${hiddenMarkets.length} others`,
-          value: othersVolume,
+          children: hiddenMarkets.map(m => ({
+            name: m.title,
+            value: getVolumeForTimeframe(m, timeframe),
+            market: m,
+            category: categoryName,
+          })),
           category: categoryName,
         });
       }
