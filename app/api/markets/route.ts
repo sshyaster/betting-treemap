@@ -1,10 +1,16 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { fetchAllMarkets } from '@/lib/api';
 
 export const revalidate = 300; // Cache for 5 minutes
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    // Log cron invocations
+    const isCron = request.headers.get('x-vercel-cron') === '1';
+    if (isCron) {
+      console.log('Cron job: refreshing market data');
+    }
+
     const markets = await fetchAllMarkets();
 
     const totalVolume = markets.reduce((sum, m) => sum + m.volume, 0);
