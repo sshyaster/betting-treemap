@@ -28,7 +28,7 @@ export async function fetchAllMarkets(): Promise<Market[]> {
   try {
     const response = await fetch(
       `${POLYMARKET_API}/events?active=true&closed=false&limit=200&order=volume24hr&ascending=false`,
-      { next: { revalidate: 300 } }
+      { cache: 'no-store' }
     );
 
     if (!response.ok) throw new Error('Polymarket API error');
