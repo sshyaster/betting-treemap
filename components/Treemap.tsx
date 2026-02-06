@@ -24,28 +24,28 @@ interface TooltipData {
   y: number;
 }
 
-// Leaf node fills (slightly more saturated)
+// Leaf node fills — clearly visible soft pastels
 const CATEGORY_FILLS: Record<string, string> = {
-  'Politics': '#d5ecd7',
-  'Sports': '#cde4f6',
-  'Crypto': '#f5d0d8',
-  'Economics': '#ddebc2',
-  'Tech': '#e4cff0',
-  'Entertainment': '#fce0c3',
-  'World': '#c6e6e3',
-  'Other': '#e8ddf0',
+  'Politics': '#b8ddb9',
+  'Sports': '#a8d4f0',
+  'Crypto': '#f0b8c8',
+  'Economics': '#c8dea0',
+  'Tech': '#d4b8e8',
+  'Entertainment': '#f8d0a0',
+  'World': '#a0d8d0',
+  'Other': '#d0c0e8',
 };
 
-// Parent node fills (lighter wash of same hue)
+// Parent node fills — lighter version of same hue
 const CATEGORY_BG: Record<string, string> = {
-  'Politics': '#edf7ee',
-  'Sports': '#e9f1fa',
-  'Crypto': '#fbecef',
-  'Economics': '#f0f5e3',
-  'Tech': '#f3eaf8',
-  'Entertainment': '#fef3e8',
-  'World': '#e6f3f1',
-  'Other': '#f3eef8',
+  'Politics': '#d8eeda',
+  'Sports': '#c8e4f4',
+  'Crypto': '#f4d4de',
+  'Economics': '#dceac0',
+  'Tech': '#e4d4f0',
+  'Entertainment': '#fce4c4',
+  'World': '#c0e8e2',
+  'Other': '#e0d4f0',
 };
 
 export default function Treemap({ data, width, height, onMarketClick, totalVolume, timeframeLabel = '24h' }: TreemapProps) {
