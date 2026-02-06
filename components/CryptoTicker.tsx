@@ -21,13 +21,69 @@ const COINS = [
   { id: 'cardano', symbol: 'ADA', pair: 'ADAUSD', resultKey: 'ADAUSD' },
 ];
 
-const MAX_HISTORY = 60;
+const MAX_HISTORY = 96; // 24h of 15-min candles
 
 export default function CryptoTicker() {
   const [prices, setPrices] = useState<Record<string, CryptoPrice>>({});
   const [isLoaded, setIsLoaded] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Fetch 24h of OHLC history on mount
+  useEffect(() => {
+    async function fetchHistory() {
+      const since = Math.floor(Date.now() / 1000) - 24 * 60 * 60; // 24h ago
+
+      const results = await Promise.allSettled(
+        COINS.map(async (coin) => {
+          const res = await fetch(
+            `https://api.kraken.com/0/public/OHLC?pair=${coin.pair}&interval=15&since=${since}`,
+            { cache: 'no-store' }
+          );
+          if (!res.ok) return null;
+          const data = await res.json();
+          if (data.error?.length > 0) return null;
+
+          // OHLC result is keyed by pair name, value is array of candles
+          // Each candle: [time, open, high, low, close, vwap, volume, count]
+          const pairKey = Object.keys(data.result).find(k => k !== 'last');
+          if (!pairKey) return null;
+
+          const candles = data.result[pairKey] as number[][];
+          const closePrices = candles.map((c: number[]) => parseFloat(String(c[4])));
+
+          return { coinId: coin.id, symbol: coin.symbol, history: closePrices };
+        })
+      );
+
+      const initial: Record<string, CryptoPrice> = {};
+      for (const result of results) {
+        if (result.status === 'fulfilled' && result.value) {
+          const { coinId, symbol, history } = result.value;
+          const lastPrice = history[history.length - 1] || 0;
+          const firstPrice = history[0] || lastPrice;
+          const change24h = firstPrice > 0 ? ((lastPrice - firstPrice) / firstPrice) * 100 : 0;
+
+          initial[coinId] = {
+            id: coinId,
+            symbol,
+            price: lastPrice,
+            prevPrice: lastPrice,
+            change24h,
+            priceHistory: history.slice(-MAX_HISTORY),
+          };
+        }
+      }
+
+      if (Object.keys(initial).length > 0) {
+        setPrices(initial);
+        setIsLoaded(true);
+      }
+    }
+
+    fetchHistory();
+  }, []);
+
+  // Live polling for current prices
   useEffect(() => {
     async function fetchPrices() {
       try {
@@ -49,14 +105,14 @@ export default function CryptoTicker() {
             const tickerData = data.result?.[coin.resultKey];
 
             if (tickerData) {
-              const price = parseFloat(tickerData.c?.[0]) || 0; // Last trade price
-              const open = parseFloat(tickerData.o) || price; // 24h open
+              const price = parseFloat(tickerData.c?.[0]) || 0;
+              const open = parseFloat(tickerData.o) || price;
               const change24h = open > 0 ? ((price - open) / open) * 100 : 0;
 
               const prevPrice = prev[coin.id]?.price || price;
               const prevHistory = prev[coin.id]?.priceHistory || [];
 
-              // Only add to history if price changed
+              // Append new price point if it changed
               const newHistory = price !== prevHistory[prevHistory.length - 1]
                 ? [...prevHistory, price].slice(-MAX_HISTORY)
                 : prevHistory.length > 0 ? prevHistory : [price];
@@ -83,13 +139,14 @@ export default function CryptoTicker() {
       }
     }
 
-    // Initial fetch
-    fetchPrices();
-
-    // Poll every 1 second
-    intervalRef.current = setInterval(fetchPrices, 1000);
+    // Start polling after a short delay (let history load first)
+    const startDelay = setTimeout(() => {
+      fetchPrices();
+      intervalRef.current = setInterval(fetchPrices, 1000);
+    }, 2000);
 
     return () => {
+      clearTimeout(startDelay);
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
   }, []);
