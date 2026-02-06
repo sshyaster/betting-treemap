@@ -36,11 +36,11 @@ export async function fetchAllMarkets(): Promise<Market[]> {
     const data = await response.json();
 
     return data
-      .filter((event: any) => event.volume > 1000)
+      .filter((event: any) => (event.volume24hr || 0) > 1000)
       .map((event: any) => ({
         id: `pm-${event.id}`,
         title: event.title || 'Untitled',
-        volume: event.volume || 0,
+        volume: event.volume24hr || 0,
         openInterest: event.liquidity || 0,
         category: categorize(event.title, event.slug),
         platform: 'polymarket' as const,
