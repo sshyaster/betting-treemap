@@ -23,117 +23,78 @@ interface TooltipData {
   y: number;
 }
 
-const CATEGORY_COLORS: Record<string, string> = {
-  'Politics': '#c8e6c9',
-  'Sports': '#bbdefb',
-  'Crypto': '#fff9c4',
-  'Economics': '#f0f4c3',
-  'Tech': '#e1bee7',
-  'Entertainment': '#ffccbc',
-  'World': '#b2dfdb',
-  'Other': '#e0e0e0',
+const CATEGORY_TINTS: Record<string, string> = {
+  'Politics': '#e8f5e9',
+  'Sports': '#e3f2fd',
+  'Crypto': '#fce4ec',
+  'Economics': '#f1f8e9',
+  'Tech': '#f3e5f5',
+  'Entertainment': '#fff3e0',
+  'World': '#e0f2f1',
+  'Other': '#fafafa',
 };
 
 export default function Treemap({ data, width, height, onMarketClick, totalVolume }: TreemapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
-  const [viewStack, setViewStack] = useState<TreemapData[]>([data]);
-  const [isTransitioning, setIsTransitioning] = useState(false);
 
-  const currentView = viewStack[viewStack.length - 1];
-
-  useEffect(() => {
-    setViewStack([data]);
-  }, [data]);
-
-  const drillDown = useCallback((node: TreemapData) => {
-    if (node.children && node.children.length > 0 && !isTransitioning) {
-      setIsTransitioning(true);
-      setViewStack(prev => [...prev, node]);
+  const getTint = useCallback((d: d3.HierarchyRectangularNode<TreemapData>): string => {
+    // Find category ancestor (depth 1)
+    let node: d3.HierarchyRectangularNode<TreemapData> | null = d;
+    while (node && node.depth > 1) {
+      node = node.parent;
     }
-  }, [isTransitioning]);
+    const category = node?.data?.name || '';
+    const base = CATEGORY_TINTS[category] || '#fafafa';
 
-  const goBack = useCallback((index: number) => {
-    if (!isTransitioning) {
-      setIsTransitioning(true);
-      setViewStack(prev => prev.slice(0, index + 1));
+    // Leaf nodes get the tint, parent nodes get white
+    if (!d.children) {
+      return base;
     }
-  }, [isTransitioning]);
-
-  const getColor = useCallback((d: any): string => {
-    const name = d.data?.name || '';
-    if (CATEGORY_COLORS[name]) return CATEGORY_COLORS[name];
-    if (d.parent?.data?.name && CATEGORY_COLORS[d.parent.data.name]) {
-      return CATEGORY_COLORS[d.parent.data.name];
-    }
-    if (d.data?.category && CATEGORY_COLORS[d.data.category]) {
-      return CATEGORY_COLORS[d.data.category];
-    }
-    return '#f5f5f5';
+    return '#ffffff';
   }, []);
 
   useEffect(() => {
-    if (!svgRef.current || !currentView || width === 0 || height === 0) return;
+    if (!svgRef.current || !data || width === 0 || height === 0) return;
 
     const svg = d3.select(svgRef.current);
+    svg.selectAll('*').remove();
 
-    // Create root hierarchy
-    const root = d3.hierarchy(currentView)
+    const root = d3.hierarchy(data)
       .sum(d => d.value || 0)
       .sort((a, b) => (b.value || 0) - (a.value || 0));
 
-    // Create treemap layout
     d3.treemap<TreemapData>()
       .size([width, height])
-      .padding(2)
-      .paddingTop(26)
-      .paddingInner(2)
+      .paddingTop(22)
+      .paddingRight(1)
+      .paddingBottom(1)
+      .paddingLeft(1)
+      .paddingInner(1)
       .round(true)(root);
 
-    const nodes = root.descendants();
-    const t = svg.transition().duration(750).ease(d3.easeCubicInOut);
+    type RectNode = d3.HierarchyRectangularNode<TreemapData>;
+    const nodes = root.descendants() as RectNode[];
 
-    // Bind data with key function
-    const groups = svg.selectAll<SVGGElement, d3.HierarchyRectangularNode<TreemapData>>('g.node')
-      .data(nodes, d => d.data.name + '-' + d.depth);
-
-    // Exit old nodes
-    groups.exit()
-      .transition(t as any)
-      .style('opacity', 0)
-      .remove();
-
-    // Enter new nodes
-    const enterGroups = groups.enter()
+    // Draw all nodes
+    const groups = svg.selectAll<SVGGElement, RectNode>('g.node')
+      .data(nodes.filter(d => d.depth > 0))
+      .enter()
       .append('g')
-      .attr('class', 'node')
-      .style('opacity', 0);
+      .attr('class', 'node');
 
-    // Add rectangles to entering groups
-    enterGroups.append('rect')
-      .attr('class', 'node-rect');
-
-    // Add text labels
-    enterGroups.append('text')
-      .attr('class', 'node-label');
-
-    enterGroups.append('text')
-      .attr('class', 'node-volume');
-
-    // Merge enter + update
-    const allGroups = enterGroups.merge(groups);
-
-    // Transition opacity for entering nodes
-    allGroups.transition(t as any)
-      .style('opacity', 1)
-      .on('end', () => setIsTransitioning(false));
-
-    // Update rectangles with transition
-    allGroups.select<SVGRectElement>('rect.node-rect')
-      .attr('cursor', d => (d.children || d.data?.market || (d.data as any)?.isOthers) ? 'pointer' : 'default')
+    // Rectangles
+    groups.append('rect')
+      .attr('x', d => d.x0)
+      .attr('y', d => d.y0)
+      .attr('width', d => Math.max(0, d.x1 - d.x0))
+      .attr('height', d => Math.max(0, d.y1 - d.y0))
+      .attr('fill', d => getTint(d))
+      .attr('stroke', d => d.depth === 1 ? '#333' : '#bbb')
+      .attr('stroke-width', d => d.depth === 1 ? 1.5 : 0.5)
+      .attr('cursor', d => (d.data?.market || d.children) ? 'pointer' : 'default')
       .on('mouseenter', function(event: MouseEvent, d) {
-        if (d.depth === 0) return; // Skip root
-        d3.select(this).attr('stroke', '#333').attr('stroke-width', 2);
+        d3.select(this).attr('stroke', '#000').attr('stroke-width', 2);
 
         const percentTotal = totalVolume > 0 ? ((d.value || 0) / totalVolume) * 100 : 0;
         const parentValue = d.parent?.value;
@@ -153,114 +114,94 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
         setTooltip(prev => prev ? { ...prev, x: event.pageX, y: event.pageY } : null);
       })
       .on('mouseleave', function(_, d) {
-        if (d.depth === 0) return;
-        d3.select(this).attr('stroke', '#e0e0e0').attr('stroke-width', 1);
+        d3.select(this)
+          .attr('stroke', d.depth === 1 ? '#333' : '#bbb')
+          .attr('stroke-width', d.depth === 1 ? 1.5 : 0.5);
         setTooltip(null);
       })
       .on('click', (event: MouseEvent, d) => {
         event.stopPropagation();
-        if (d.depth === 0) return;
-
         const nodeData = d.data as any;
         if (nodeData?.market && onMarketClick) {
           onMarketClick(nodeData.market);
-        } else if (nodeData?.isOthers && nodeData?.hiddenMarkets) {
-          const expanded: TreemapData = {
-            name: nodeData.name,
-            children: nodeData.hiddenMarkets.map((m: Market) => ({
-              name: m.title,
-              value: m.volume,
-              market: m,
-              category: m.category,
-            })),
-          };
-          drillDown(expanded);
-        } else if (d.children && d.children.length > 0) {
-          drillDown(d.data);
         }
-      })
-      .transition(t as any)
-      .attr('x', (d: any) => d.x0)
-      .attr('y', (d: any) => d.y0)
-      .attr('width', (d: any) => Math.max(0, d.x1 - d.x0))
-      .attr('height', (d: any) => Math.max(0, d.y1 - d.y0))
-      .attr('fill', (d: any) => {
-        if (d.depth === 0) return '#ffffff';
-        const color = getColor(d);
-        return d3.color(color)?.brighter((d.depth - 1) * 0.2)?.toString() || color;
-      })
-      .attr('stroke', (d: any) => d.depth === 0 ? 'none' : '#e0e0e0')
-      .attr('stroke-width', 1)
-      .attr('rx', 2);
+      });
 
-    // Update labels with transition
-    allGroups.select<SVGTextElement>('text.node-label')
-      .transition(t as any)
-      .attr('x', (d: any) => d.x0 + 6)
-      .attr('y', (d: any) => d.y0 + 17)
-      .attr('fill', '#333')
-      .attr('font-size', (d: any) => d.children ? '12px' : '11px')
-      .attr('font-weight', (d: any) => d.children ? '500' : '400')
+    // Header labels for category + subcategory nodes (nodes with children)
+    groups.filter(d => !!d.children)
+      .append('text')
+      .attr('x', d => d.x0 + 4)
+      .attr('y', d => d.y0 + 15)
+      .attr('fill', '#111')
+      .attr('font-size', d => d.depth === 1 ? '13px' : '11px')
+      .attr('font-weight', d => d.depth === 1 ? '600' : '500')
       .attr('pointer-events', 'none')
-      .text((d: any) => {
-        if (d.depth === 0) return '';
-        const rectWidth = d.x1 - d.x0;
-        const rectHeight = d.y1 - d.y0;
-        if (rectWidth < 35 || rectHeight < 22) return '';
+      .text(d => {
+        const w = d.x1 - d.x0;
+        if (w < 30) return '';
+        const name = d.data?.name || '';
+        const vol = formatVolume(d.value || 0);
+        const full = `${name} ${vol}`;
+        const maxChars = Math.floor(w / 7.5);
+        if (full.length <= maxChars) return full;
+        if (name.length > maxChars - 1) return name.slice(0, maxChars - 2) + '…';
+        return name;
+      });
+
+    // Leaf node labels (markets)
+    groups.filter(d => !d.children)
+      .each(function(d) {
+        const g = d3.select(this);
+        const w = d.x1 - d.x0;
+        const h = d.y1 - d.y0;
+
+        if (w < 30 || h < 18) return;
 
         const name = d.data?.name || '';
-        const maxChars = Math.floor(rectWidth / 7);
-        let displayName = name.length > maxChars ? name.slice(0, maxChars - 2) + '...' : name;
+        const maxChars = Math.floor(w / 6.5);
+        const displayName = name.length > maxChars ? name.slice(0, maxChars - 1) + '…' : name;
 
-        // Add volume for parent nodes
-        if (d.children && rectWidth > 80) {
-          displayName += ' ' + formatVolume(d.value || 0);
+        // Title
+        g.append('text')
+          .attr('x', d.x0 + 4)
+          .attr('y', d.y0 + 14)
+          .attr('fill', '#333')
+          .attr('font-size', '11px')
+          .attr('font-weight', '400')
+          .attr('pointer-events', 'none')
+          .text(displayName);
+
+        // Volume (if enough space)
+        if (h >= 30 && w >= 45) {
+          g.append('text')
+            .attr('x', d.x0 + 4)
+            .attr('y', d.y0 + 26)
+            .attr('fill', '#888')
+            .attr('font-size', '10px')
+            .attr('pointer-events', 'none')
+            .text(formatVolume(d.value || 0));
         }
-        return displayName;
       });
 
-    // Volume text for leaf nodes
-    allGroups.select<SVGTextElement>('text.node-volume')
-      .transition(t as any)
-      .attr('x', (d: any) => d.x0 + 6)
-      .attr('y', (d: any) => d.y0 + 30)
-      .attr('fill', '#666')
-      .attr('font-size', '10px')
-      .attr('pointer-events', 'none')
-      .text((d: any) => {
-        if (d.depth === 0 || d.children) return '';
-        const rectWidth = d.x1 - d.x0;
-        const rectHeight = d.y1 - d.y0;
-        if (rectWidth < 50 || rectHeight < 38) return '';
-        return formatVolume(d.value || 0);
-      });
+    // Root border
+    svg.append('rect')
+      .attr('x', 0)
+      .attr('y', 0)
+      .attr('width', width)
+      .attr('height', height)
+      .attr('fill', 'none')
+      .attr('stroke', '#333')
+      .attr('stroke-width', 1.5);
 
-  }, [currentView, width, height, onMarketClick, drillDown, totalVolume, getColor]);
+  }, [data, width, height, onMarketClick, totalVolume, getTint]);
 
   return (
     <div className="relative">
       {/* Header */}
-      <div className="bg-white border border-gray-200 px-4 py-2 mb-0 flex items-center justify-between">
-        <div className="flex items-center gap-2 text-sm">
-          {viewStack.map((view, index) => (
-            <div key={index} className="flex items-center">
-              {index > 0 && <span className="text-gray-400 mx-2">/</span>}
-              <button
-                onClick={() => goBack(index)}
-                disabled={isTransitioning}
-                className={`hover:underline transition-colors ${
-                  index === viewStack.length - 1
-                    ? 'text-gray-900 font-medium'
-                    : 'text-gray-500 hover:text-gray-700'
-                } ${isTransitioning ? 'cursor-wait' : ''}`}
-              >
-                {view.name || 'All Markets'}
-              </button>
-            </div>
-          ))}
-        </div>
-        <div className="text-sm text-gray-600">
-          Total Volume <span className="font-semibold text-gray-900">{formatVolume(totalVolume)}</span>
+      <div className="bg-white border border-gray-300 border-b-0 px-4 py-2 flex items-center justify-between">
+        <div className="text-sm font-semibold text-gray-900">
+          Polymarket 24h Volume{' '}
+          <span className="font-bold">{formatVolume(totalVolume)}</span>
         </div>
       </div>
 
@@ -269,20 +210,20 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
         ref={svgRef}
         width={width}
         height={height}
-        className="border border-t-0 border-gray-200 bg-white"
+        className="bg-white block"
         style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif" }}
       />
 
       {/* Tooltip */}
       {tooltip && (
         <div
-          className="fixed z-50 bg-gray-900 text-white rounded-lg px-4 py-3 shadow-xl pointer-events-none min-w-[200px] transition-opacity duration-150"
+          className="fixed z-50 bg-gray-900 text-white rounded-lg px-4 py-3 shadow-xl pointer-events-none min-w-[200px]"
           style={{
             left: Math.min(tooltip.x + 12, window.innerWidth - 240),
             top: Math.min(tooltip.y + 12, window.innerHeight - 140),
           }}
         >
-          <div className="font-semibold text-base mb-2">{tooltip.title}</div>
+          <div className="font-semibold text-sm mb-2">{tooltip.title}</div>
           <div className="text-green-400 text-xl font-bold mb-2">
             {formatVolume(tooltip.volume)}
           </div>

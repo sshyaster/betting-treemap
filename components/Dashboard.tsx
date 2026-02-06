@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import Treemap from './Treemap';
-import FilterBar from './FilterBar';
 import CryptoTicker from './CryptoTicker';
 import { Market, ApiResponse } from '@/lib/types';
 import { buildTreemapData } from '@/lib/utils';
@@ -12,7 +11,6 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('');
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
   useEffect(() => {
@@ -43,7 +41,7 @@ export default function Dashboard() {
       const container = document.getElementById('treemap-container');
       if (container) {
         const width = container.clientWidth || window.innerWidth - 40;
-        const height = Math.max(600, window.innerHeight - 320);
+        const height = Math.max(600, window.innerHeight - 200);
         setDimensions({ width, height });
       }
     }
@@ -56,23 +54,12 @@ export default function Dashboard() {
     };
   }, [loading]);
 
-  const filteredMarkets = useMemo(() => {
-    return markets.filter(m => {
-      return selectedCategories.length === 0 || selectedCategories.includes(m.category);
-    });
-  }, [markets, selectedCategories]);
-
   const treemapData = useMemo(() => {
-    return buildTreemapData(filteredMarkets, 'category');
-  }, [filteredMarkets]);
+    return buildTreemapData(markets);
+  }, [markets]);
 
   const totalVolume = useMemo(() => {
-    return filteredMarkets.reduce((sum, m) => sum + m.volume, 0);
-  }, [filteredMarkets]);
-
-  const categories = useMemo(() => {
-    const cats = new Set(markets.map(m => m.category));
-    return Array.from(cats).sort();
+    return markets.reduce((sum, m) => sum + m.volume, 0);
   }, [markets]);
 
   const handleMarketClick = (market: Market) => {
@@ -81,7 +68,7 @@ export default function Dashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50">
+      <div className="flex items-center justify-center h-screen bg-white">
         <div className="text-center">
           <div className="w-12 h-12 border-3 border-gray-300 border-t-gray-600 rounded-full animate-spin mx-auto mb-4" />
           <div className="text-gray-500 text-sm">Loading market data...</div>
@@ -92,7 +79,7 @@ export default function Dashboard() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50">
+      <div className="flex items-center justify-center h-screen bg-white">
         <div className="text-center">
           <div className="text-red-500 text-lg mb-2">Error</div>
           <div className="text-gray-500 text-sm mb-4">{error}</div>
@@ -108,35 +95,25 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-[1800px] mx-auto p-6">
+    <div className="min-h-screen bg-white">
+      <div className="max-w-[1800px] mx-auto px-4 py-4">
         {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-semibold text-gray-900 mb-1">
-            Polymarket
-          </h1>
-          <p className="text-gray-500 text-sm">
-            Prediction market volumes
-            <span className="ml-3 text-gray-400">
-              Updated {lastUpdated}
-            </span>
-          </p>
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-semibold text-gray-900">
+              Prediction Markets
+            </h1>
+            <p className="text-gray-400 text-xs mt-0.5">
+              24h volume distribution &middot; Updated {lastUpdated}
+            </p>
+          </div>
         </div>
 
         {/* Crypto Prices */}
         <CryptoTicker />
 
-        {/* Filters */}
-        <FilterBar
-          categories={categories}
-          selectedCategories={selectedCategories}
-          onCategoryChange={setSelectedCategories}
-          totalVolume={totalVolume}
-          marketCount={filteredMarkets.length}
-        />
-
         {/* Treemap */}
-        <div id="treemap-container" className="w-full" style={{ minHeight: '600px' }}>
+        <div id="treemap-container" className="w-full mt-3" style={{ minHeight: '600px' }}>
           {dimensions.width > 0 && dimensions.height > 0 && (
             <Treemap
               data={treemapData}
@@ -154,8 +131,8 @@ export default function Dashboard() {
         </div>
 
         {/* Footer */}
-        <div className="mt-6 text-center text-gray-400 text-xs">
-          Data from Polymarket API. Click any market to view details.
+        <div className="mt-3 text-center text-gray-400 text-xs">
+          Data from Polymarket API &middot; Click any market to view on Polymarket
         </div>
       </div>
     </div>
