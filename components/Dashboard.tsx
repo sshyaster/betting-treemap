@@ -276,6 +276,11 @@ export default function Dashboard() {
             <div className={`mt-3 text-center text-xs ${dark ? 'text-gray-600' : 'text-gray-400'}`}>
               Data from {platform === 'polymarket' ? 'Polymarket' : 'Kalshi'} API · Click any market to view
             </div>
+
+            {/* Insights summary below treemap */}
+            <div className="mt-6">
+              <Insights polyMarkets={polyMarkets} kalshiMarkets={kalshiMarkets} timeframe={timeframe} dark={dark} />
+            </div>
           </>
         )}
 

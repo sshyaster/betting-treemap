@@ -95,10 +95,16 @@ const CATEGORY_LEAF_DARK: Record<string, string> = {
   'Other': '#1e1a28',
 };
 
+const ZOOM_DURATION = 450;
+
 export default function Treemap({ data, width, height, onMarketClick, totalVolume, timeframeLabel = '24h', dark = false }: TreemapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
   const [viewStack, setViewStack] = useState<TreemapData[]>([data]);
+  const [isAnimating, setIsAnimating] = useState(false);
+  // Store the bounding box of the clicked node for zoom origin
+  const zoomTargetRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+  const zoomDirectionRef = useRef<'in' | 'out'>('in');
 
   const currentView = viewStack[viewStack.length - 1];
 
@@ -106,15 +112,22 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
     setViewStack([data]);
   }, [data]);
 
-  const drillDown = useCallback((node: TreemapData) => {
-    if (node.children && node.children.length > 0) {
+  const drillDown = useCallback((node: TreemapData, bounds?: { x0: number; y0: number; x1: number; y1: number }) => {
+    if (node.children && node.children.length > 0 && !isAnimating) {
+      zoomTargetRef.current = bounds || null;
+      zoomDirectionRef.current = 'in';
+      setIsAnimating(true);
       setViewStack(prev => [...prev, node]);
     }
-  }, []);
+  }, [isAnimating]);
 
   const goBack = useCallback((index: number) => {
+    if (isAnimating) return;
+    zoomTargetRef.current = null;
+    zoomDirectionRef.current = 'out';
+    setIsAnimating(true);
     setViewStack(prev => prev.slice(0, index + 1));
-  }, []);
+  }, [isAnimating]);
 
   const getCategoryName = useCallback((d: d3.HierarchyRectangularNode<TreemapData>): string => {
     let node: d3.HierarchyRectangularNode<TreemapData> | null = d;
@@ -124,12 +137,33 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
     return node?.data?.name || d.data?.category || '';
   }, []);
 
+  // Helper to get colors based on dark mode
+  const getFrameFill = useCallback((cat: string) => {
+    return dark
+      ? (CATEGORY_FRAME_DARK[cat] || CATEGORY_FRAME_DARK['Other'])
+      : (CATEGORY_FRAME[cat] || CATEGORY_FRAME['Other']);
+  }, [dark]);
+
+  const getHeaderFill = useCallback((cat: string) => {
+    return dark
+      ? (CATEGORY_HEADER_DARK[cat] || CATEGORY_HEADER_DARK['Other'])
+      : (CATEGORY_HEADER[cat] || CATEGORY_HEADER['Other']);
+  }, [dark]);
+
+  const getLeafFill = useCallback((cat: string) => {
+    return dark
+      ? (CATEGORY_LEAF_DARK[cat] || CATEGORY_LEAF_DARK['Other'])
+      : (CATEGORY_LEAF[cat] || CATEGORY_LEAF['Other']);
+  }, [dark]);
+
   useEffect(() => {
     if (!svgRef.current || !currentView || width === 0 || height === 0) return;
 
     const svg = d3.select(svgRef.current);
-    svg.selectAll('*').remove();
+    const zoomTarget = zoomTargetRef.current;
+    const zoomDirection = zoomDirectionRef.current;
 
+    // Compute treemap layout
     const root = d3.hierarchy(currentView)
       .sum(d => d.value || 0)
       .sort((a, b) => (b.value || 0) - (a.value || 0));
@@ -145,50 +179,129 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
 
     type RectNode = d3.HierarchyRectangularNode<TreemapData>;
     const nodes = root.descendants() as RectNode[];
-
-    // Sort: draw parents first, then leaves on top
     const parentNodes = nodes.filter(d => d.depth > 0 && d.children);
     const leafNodes = nodes.filter(d => d.depth > 0 && !d.children);
 
-    // --- PARENT NODES (category/subcategory frames) ---
-    const parentGroups = svg.selectAll<SVGGElement, RectNode>('g.parent')
+    // --- ZOOM ANIMATION ---
+    if (isAnimating) {
+      if (zoomDirection === 'in' && zoomTarget) {
+        // Zoom IN: old content scales up from clicked box, fades out, new content fades in
+        const oldContent = svg.select('g.content');
+        if (!oldContent.empty()) {
+          // Scale old content: zoom into the clicked box
+          const sx = width / (zoomTarget.x1 - zoomTarget.x0);
+          const sy = height / (zoomTarget.y1 - zoomTarget.y0);
+          const tx = -zoomTarget.x0 * sx;
+          const ty = -zoomTarget.y0 * sy;
+
+          oldContent
+            .transition()
+            .duration(ZOOM_DURATION)
+            .attr('transform', `translate(${tx},${ty}) scale(${sx},${sy})`)
+            .style('opacity', 0)
+            .on('end', () => {
+              oldContent.remove();
+              drawTreemap(svg, parentNodes, leafNodes, 1);
+              setIsAnimating(false);
+            });
+
+          // Draw new content starting transparent
+          drawTreemap(svg, parentNodes, leafNodes, 0);
+          svg.select('g.content:last-child')
+            .transition()
+            .delay(ZOOM_DURATION * 0.3)
+            .duration(ZOOM_DURATION * 0.7)
+            .style('opacity', 1);
+        } else {
+          drawTreemap(svg, parentNodes, leafNodes, 0);
+          svg.select('g.content')
+            .transition()
+            .duration(ZOOM_DURATION * 0.7)
+            .style('opacity', 1);
+          setTimeout(() => setIsAnimating(false), ZOOM_DURATION * 0.7);
+        }
+      } else {
+        // Zoom OUT: new content starts zoomed in on a central area, scales back to normal
+        const oldContent = svg.select('g.content');
+        if (!oldContent.empty()) {
+          oldContent
+            .transition()
+            .duration(ZOOM_DURATION * 0.4)
+            .style('opacity', 0)
+            .on('end', () => {
+              oldContent.remove();
+            });
+        }
+
+        // New content starts slightly zoomed in from center, scales to normal
+        const g = drawTreemap(svg, parentNodes, leafNodes, 0);
+        const cx = width / 2;
+        const cy = height / 2;
+        const startScale = 1.3;
+        const startTx = cx * (1 - startScale);
+        const startTy = cy * (1 - startScale);
+
+        g.attr('transform', `translate(${startTx},${startTy}) scale(${startScale},${startScale})`)
+          .style('opacity', 0)
+          .transition()
+          .delay(ZOOM_DURATION * 0.2)
+          .duration(ZOOM_DURATION * 0.8)
+          .attr('transform', 'translate(0,0) scale(1,1)')
+          .style('opacity', 1)
+          .on('end', () => setIsAnimating(false));
+      }
+
+      zoomTargetRef.current = null;
+      return;
+    }
+
+    // --- NORMAL DRAW (no animation) ---
+    svg.selectAll('*').remove();
+    drawTreemap(svg, parentNodes, leafNodes, 1);
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentView, width, height, dark]);
+
+  function drawTreemap(
+    svg: d3.Selection<SVGSVGElement, unknown, null, undefined>,
+    parentNodes: d3.HierarchyRectangularNode<TreemapData>[],
+    leafNodes: d3.HierarchyRectangularNode<TreemapData>[],
+    initialOpacity: number
+  ) {
+    type RectNode = d3.HierarchyRectangularNode<TreemapData>;
+
+    const g = svg.append('g')
+      .attr('class', 'content')
+      .style('opacity', initialOpacity);
+
+    // --- PARENT NODES ---
+    const parentGroups = g.selectAll<SVGGElement, RectNode>('g.parent')
       .data(parentNodes)
       .enter()
       .append('g')
       .attr('class', 'parent');
 
-    // Frame background rectangle
     parentGroups.append('rect')
       .attr('x', d => d.x0)
       .attr('y', d => d.y0)
       .attr('width', d => Math.max(0, d.x1 - d.x0))
       .attr('height', d => Math.max(0, d.y1 - d.y0))
-      .attr('fill', d => {
-        const cat = getCategoryName(d);
-        return dark
-          ? (CATEGORY_FRAME_DARK[cat] || CATEGORY_FRAME_DARK['Other'])
-          : (CATEGORY_FRAME[cat] || CATEGORY_FRAME['Other']);
-      })
+      .attr('fill', d => getFrameFill(getCategoryName(d)))
       .attr('stroke', d => d.depth === 1 ? (dark ? '#555' : '#222') : (dark ? '#444' : '#999'))
       .attr('stroke-width', d => d.depth === 1 ? 2 : 1)
       .attr('cursor', 'pointer')
       .on('click', (event: MouseEvent, d) => {
         event.stopPropagation();
-        drillDown(d.data);
+        drillDown(d.data, { x0: d.x0, y0: d.y0, x1: d.x1, y1: d.y1 });
       });
 
-    // Header bar background (the colored strip at top)
+    // Header bar
     parentGroups.append('rect')
       .attr('x', d => d.x0 + (d.depth === 1 ? 1 : 0.5))
       .attr('y', d => d.y0 + (d.depth === 1 ? 1 : 0.5))
       .attr('width', d => Math.max(0, d.x1 - d.x0 - (d.depth === 1 ? 2 : 1)))
       .attr('height', 22)
-      .attr('fill', d => {
-        const cat = getCategoryName(d);
-        return dark
-          ? (CATEGORY_HEADER_DARK[cat] || CATEGORY_HEADER_DARK['Other'])
-          : (CATEGORY_HEADER[cat] || CATEGORY_HEADER['Other']);
-      })
+      .attr('fill', d => getHeaderFill(getCategoryName(d)))
       .attr('pointer-events', 'none');
 
     // Header text
@@ -212,7 +325,7 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
         return name;
       });
 
-    // Volume text (right-aligned in header, for depth-1 categories)
+    // Volume text right-aligned for depth-1
     parentGroups.filter(d => d.depth === 1)
       .append('text')
       .attr('x', d => d.x1 - 6)
@@ -228,31 +341,24 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
         const vol = formatVolume(d.value || 0);
         const full = `${name} ${vol}`;
         const maxChars = Math.floor(w / 8);
-        // Only show right-aligned volume if the full string didn't fit in the left text
         if (full.length <= maxChars) return '';
         if (w < 80) return '';
         return vol;
       });
 
-    // --- LEAF NODES (white boxes) ---
-    const leafGroups = svg.selectAll<SVGGElement, RectNode>('g.leaf')
+    // --- LEAF NODES ---
+    const leafGroups = g.selectAll<SVGGElement, RectNode>('g.leaf')
       .data(leafNodes)
       .enter()
       .append('g')
       .attr('class', 'leaf');
 
-    // Color-coded leaf rectangle
     leafGroups.append('rect')
       .attr('x', d => d.x0)
       .attr('y', d => d.y0)
       .attr('width', d => Math.max(0, d.x1 - d.x0))
       .attr('height', d => Math.max(0, d.y1 - d.y0))
-      .attr('fill', d => {
-        const cat = getCategoryName(d);
-        return dark
-          ? (CATEGORY_LEAF_DARK[cat] || CATEGORY_LEAF_DARK['Other'])
-          : (CATEGORY_LEAF[cat] || CATEGORY_LEAF['Other']);
-      })
+      .attr('fill', d => getLeafFill(getCategoryName(d)))
       .attr('stroke', dark ? '#555' : '#bbb')
       .attr('stroke-width', 1)
       .attr('cursor', 'pointer')
@@ -286,13 +392,13 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
         if (nodeData?.market && onMarketClick) {
           onMarketClick(nodeData.market);
         } else if (d.children && d.children.length > 0) {
-          drillDown(d.data);
+          drillDown(d.data, { x0: d.x0, y0: d.y0, x1: d.x1, y1: d.y1 });
         }
       });
 
     // Leaf labels
     leafGroups.each(function(d) {
-      const g = d3.select(this);
+      const lg = d3.select(this);
       const w = d.x1 - d.x0;
       const h = d.y1 - d.y0;
 
@@ -302,7 +408,7 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
       const maxChars = Math.floor(w / 7);
       const displayName = name.length > maxChars ? name.slice(0, maxChars - 1) + '…' : name;
 
-      g.append('text')
+      lg.append('text')
         .attr('x', d.x0 + 5)
         .attr('y', d.y0 + 15)
         .attr('fill', dark ? '#e5e7eb' : '#222')
@@ -312,7 +418,7 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
         .text(displayName);
 
       if (h >= 32 && w >= 50) {
-        g.append('text')
+        lg.append('text')
           .attr('x', d.x0 + 5)
           .attr('y', d.y0 + 28)
           .attr('fill', dark ? '#9ca3af' : '#888')
@@ -324,7 +430,7 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
     });
 
     // Outer border
-    svg.append('rect')
+    g.append('rect')
       .attr('x', 0)
       .attr('y', 0)
       .attr('width', width)
@@ -333,7 +439,8 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
       .attr('stroke', dark ? '#555' : '#222')
       .attr('stroke-width', 2);
 
-  }, [currentView, width, height, onMarketClick, totalVolume, getCategoryName, drillDown, dark]);
+    return g;
+  }
 
   return (
     <div className="relative">
@@ -345,6 +452,7 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
               {index > 0 && <span className="text-gray-400 mx-1">/</span>}
               <button
                 onClick={() => goBack(index)}
+                disabled={isAnimating}
                 className={`hover:underline ${
                   index === viewStack.length - 1
                     ? (dark ? 'text-gray-100 font-semibold' : 'text-gray-900 font-semibold')
@@ -368,7 +476,10 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
         width={width}
         height={height}
         className={`block ${dark ? 'bg-[#141620]' : 'bg-white'}`}
-        style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif" }}
+        style={{
+          fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif",
+          overflow: 'hidden',
+        }}
       />
 
       {/* Tooltip */}
