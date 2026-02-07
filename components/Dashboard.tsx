@@ -7,12 +7,13 @@ import CryptoDashboard from './CryptoDashboard';
 import Insights from './Insights';
 import DataTable from './DataTable';
 import TwitterFeed from './TwitterFeed';
+import NewsFeed from './NewsFeed';
 import AuthButton from './AuthButton';
 import { Market, ApiResponse, Timeframe } from '@/lib/types';
 import { buildTreemapData, getVolumeForTimeframe } from '@/lib/utils';
 
 type Platform = 'polymarket' | 'kalshi';
-type Tab = 'markets' | 'crypto' | 'feed' | 'insights' | 'data';
+type Tab = 'markets' | 'crypto' | 'feed' | 'news' | 'insights' | 'data';
 
 const TIMEFRAMES: { key: Timeframe; label: string }[] = [
   { key: '24h', label: '24h' },
@@ -27,6 +28,7 @@ const TABS: { key: Tab; label: string }[] = [
   { key: 'markets', label: 'Markets' },
   { key: 'crypto', label: 'Crypto' },
   { key: 'feed', label: 'Feed' },
+  { key: 'news', label: 'News' },
   { key: 'insights', label: 'Insights' },
   { key: 'data', label: 'Data' },
 ];
@@ -294,6 +296,8 @@ export default function Dashboard() {
         {tab === 'crypto' && <CryptoDashboard dark={dark} />}
 
         {tab === 'feed' && <TwitterFeed dark={dark} />}
+
+        {tab === 'news' && <NewsFeed dark={dark} />}
 
         {tab === 'insights' && (
           <Insights polyMarkets={polyMarkets} kalshiMarkets={kalshiMarkets} timeframe={timeframe} dark={dark} />
