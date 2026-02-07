@@ -1,5 +1,10 @@
 export type Timeframe = '24h' | '1w' | '1m' | '1y' | 'all' | 'oi';
 
+export interface MarketOutcome {
+  name: string;
+  price: number; // 0-1
+}
+
 export interface Market {
   id: string;
   title: string;
@@ -14,6 +19,7 @@ export interface Market {
   platform: 'polymarket' | 'kalshi';
   url: string;
   price?: number;
+  outcomes?: MarketOutcome[]; // top outcomes for multi-option markets
 }
 
 export interface TreemapData {

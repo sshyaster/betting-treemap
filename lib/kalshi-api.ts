@@ -67,22 +67,39 @@ export async function fetchKalshiMarkets(): Promise<Market[]> {
       // Include events that have any meaningful activity
       if (volumeAll <= 0 && openInterest <= 0) continue;
 
-      // Get best yes price from first market
-      const firstMarket = eventMarkets[0];
-      const yesPrice = firstMarket?.last_price
-        ? firstMarket.last_price / 100
-        : undefined;
-
       const category = mapCategory(event.category || 'Other');
       const eventTicker = event.event_ticker || '';
       const seriesTicker = event.series_ticker || eventTicker;
+
+      let price: number | undefined;
+      let outcomes: { name: string; price: number }[] = [];
+
+      if (eventMarkets.length === 1) {
+        // Binary market
+        price = eventMarkets[0]?.last_price
+          ? eventMarkets[0].last_price / 100
+          : undefined;
+      } else {
+        // Multi-outcome: each sub-market is one option
+        outcomes = eventMarkets
+          .filter((m: any) => m.last_price > 0)
+          .map((m: any) => ({
+            name: m.title || m.subtitle || m.ticker || 'Unknown',
+            price: (m.last_price || 0) / 100,
+          }))
+          .sort((a: { price: number }, b: { price: number }) => b.price - a.price)
+          .slice(0, 6);
+
+        if (outcomes.length > 0) {
+          price = outcomes[0].price;
+        }
+      }
 
       markets.push({
         id: `kl-${eventTicker}`,
         title: event.title || 'Untitled',
         volume: volume24h,
         volume24hr: volume24h,
-        // Kalshi only provides 24h and all-time, estimate the rest
         volume1wk: Math.min(volume24h * 7, volumeAll),
         volume1mo: Math.min(volume24h * 30, volumeAll),
         volume1yr: volumeAll,
@@ -91,7 +108,8 @@ export async function fetchKalshiMarkets(): Promise<Market[]> {
         category,
         platform: 'kalshi' as const,
         url: `https://kalshi.com/markets/${seriesTicker}`,
-        price: yesPrice,
+        price,
+        outcomes: outcomes.length > 1 ? outcomes : undefined,
       });
     }
 

@@ -37,22 +37,57 @@ export async function fetchAllMarkets(): Promise<Market[]> {
 
     return data
       .filter((event: any) => (event.volume24hr || 0) > 1000)
-      .map((event: any) => ({
-        id: `pm-${event.id}`,
-        title: event.title || 'Untitled',
-        volume: event.volume24hr || 0,
-        volume24hr: event.volume24hr || 0,
-        volume1wk: event.volume1wk || 0,
-        volume1mo: event.volume1mo || 0,
-        volume1yr: event.volume1yr || 0,
-        volumeAll: event.volume || 0,
-        openInterest: event.liquidity || 0,
-        category: categorize(event.title, event.slug),
-        platform: 'polymarket' as const,
-        url: `https://polymarket.com/event/${event.slug}`,
-        price: event.markets?.[0]?.outcomePrices ?
-          JSON.parse(event.markets[0].outcomePrices)[0] : undefined,
-      }))
+      .map((event: any) => {
+        const eventMarkets = event.markets || [];
+        let price: number | undefined;
+        let outcomes: { name: string; price: number }[] = [];
+
+        if (eventMarkets.length === 1) {
+          // Binary market: single market with Yes/No
+          try {
+            const prices = JSON.parse(eventMarkets[0].outcomePrices || '[]');
+            price = parseFloat(prices[0]) || undefined;
+          } catch { /* skip */ }
+        } else if (eventMarkets.length > 1) {
+          // Multi-outcome: each market is one option
+          outcomes = eventMarkets
+            .map((m: any) => {
+              try {
+                const prices = JSON.parse(m.outcomePrices || '[]');
+                return {
+                  name: m.groupItemTitle || m.question || 'Unknown',
+                  price: parseFloat(prices[0]) || 0,
+                };
+              } catch {
+                return null;
+              }
+            })
+            .filter((o: any): o is { name: string; price: number } => o != null && o.price > 0)
+            .sort((a: { price: number }, b: { price: number }) => b.price - a.price)
+            .slice(0, 6);
+
+          if (outcomes.length > 0) {
+            price = outcomes[0].price;
+          }
+        }
+
+        return {
+          id: `pm-${event.id}`,
+          title: event.title || 'Untitled',
+          volume: event.volume24hr || 0,
+          volume24hr: event.volume24hr || 0,
+          volume1wk: event.volume1wk || 0,
+          volume1mo: event.volume1mo || 0,
+          volume1yr: event.volume1yr || 0,
+          volumeAll: event.volume || 0,
+          openInterest: event.liquidity || 0,
+          category: categorize(event.title, event.slug),
+          platform: 'polymarket' as const,
+          url: `https://polymarket.com/event/${event.slug}`,
+          price,
+          outcomes: outcomes.length > 1 ? outcomes : undefined,
+        };
+      })
       .sort((a: Market, b: Market) => b.volume - a.volume);
   } catch (error) {
     console.error('Polymarket fetch error:', error);

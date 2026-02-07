@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as d3 from 'd3';
-import { TreemapData, Market } from '@/lib/types';
+import { TreemapData, Market, MarketOutcome } from '@/lib/types';
 import { formatVolume } from '@/lib/utils';
 
 interface TreemapProps {
@@ -22,6 +22,7 @@ interface TooltipData {
   percentParent?: number;
   parentName?: string;
   yesPrice?: number;
+  outcomes?: MarketOutcome[];
   x: number;
   y: number;
 }
@@ -381,6 +382,7 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
           percentParent,
           parentName: d.parent?.data?.name,
           yesPrice: market?.price,
+          outcomes: market?.outcomes,
           x: event.pageX,
           y: event.pageY,
         });
@@ -434,56 +436,106 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
           .text(formatVolume(d.value || 0));
       }
 
-      // Yes/No ratio bar + labels on tiles with enough space
+      // Odds display on tiles
       const market = (d.data as TreemapData & { market?: Market })?.market;
-      if (market?.price != null && market.price > 0 && market.price < 1 && h >= 48 && w >= 70) {
-        const yesP = Math.round(market.price * 100);
-        const noP = 100 - yesP;
+      if (market && h >= 48 && w >= 70) {
         const barY = h >= 58 ? d.y0 + 34 : d.y0 + 32;
         const barH = 5;
         const barW = Math.min(w - 10, 120);
 
-        // Yes/No text
-        if (h >= 58) {
-          lg.append('text')
+        if (market.outcomes && market.outcomes.length > 1) {
+          // Multi-outcome market: show top options as colored segments
+          const OUTCOME_COLORS = ['#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#14b8a6', '#6b7280'];
+          const topOutcomes = market.outcomes.slice(0, Math.min(market.outcomes.length, w > 120 ? 4 : 3));
+
+          // Stacked bar
+          let barX = d.x0 + 5;
+          topOutcomes.forEach((o, i) => {
+            const segW = Math.max(2, barW * o.price);
+            lg.append('rect')
+              .attr('x', barX)
+              .attr('y', barY)
+              .attr('width', segW)
+              .attr('height', barH)
+              .attr('rx', i === 0 ? 2 : 0)
+              .attr('fill', OUTCOME_COLORS[i] || OUTCOME_COLORS[5])
+              .attr('pointer-events', 'none');
+            barX += segW + 1;
+          });
+
+          // Labels for top outcomes
+          if (h >= 56) {
+            const maxLabels = w > 140 ? 3 : w > 100 ? 2 : 1;
+            topOutcomes.slice(0, maxLabels).forEach((o, i) => {
+              const label = o.name.length > 12 ? o.name.slice(0, 11) + '…' : o.name;
+              lg.append('text')
+                .attr('x', d.x0 + 5)
+                .attr('y', barY + barH + 12 + i * 11)
+                .attr('fill', OUTCOME_COLORS[i] || OUTCOME_COLORS[5])
+                .attr('font-size', '8px')
+                .attr('font-weight', '600')
+                .attr('pointer-events', 'none')
+                .text(`${label} ${Math.round(o.price * 100)}%`);
+            });
+
+            // "+N more" if there are more outcomes
+            if (market.outcomes.length > maxLabels && h >= 56 + maxLabels * 11 + 11) {
+              lg.append('text')
+                .attr('x', d.x0 + 5)
+                .attr('y', barY + barH + 12 + maxLabels * 11)
+                .attr('fill', dark ? '#6b7280' : '#9ca3af')
+                .attr('font-size', '8px')
+                .attr('font-weight', '500')
+                .attr('pointer-events', 'none')
+                .text(`+${market.outcomes.length - maxLabels} more`);
+            }
+          }
+        } else if (market.price != null && market.price > 0 && market.price < 1) {
+          // Binary Yes/No market
+          const yesP = Math.round(market.price * 100);
+          const noP = 100 - yesP;
+
+          if (h >= 58) {
+            lg.append('text')
+              .attr('x', d.x0 + 5)
+              .attr('y', barY + barH + 12)
+              .attr('fill', '#22c55e')
+              .attr('font-size', '9px')
+              .attr('font-weight', '600')
+              .attr('pointer-events', 'none')
+              .text(`Y ${yesP}%`);
+
+            lg.append('text')
+              .attr('x', d.x0 + 5 + barW)
+              .attr('y', barY + barH + 12)
+              .attr('fill', '#ef4444')
+              .attr('font-size', '9px')
+              .attr('font-weight', '600')
+              .attr('text-anchor', 'end')
+              .attr('pointer-events', 'none')
+              .text(`${noP}% N`);
+          }
+
+          // Background bar (No)
+          lg.append('rect')
             .attr('x', d.x0 + 5)
-            .attr('y', barY + barH + 12)
-            .attr('fill', '#22c55e')
-            .attr('font-size', '9px')
-            .attr('font-weight', '600')
-            .attr('pointer-events', 'none')
-            .text(`Y ${yesP}%`);
+            .attr('y', barY)
+            .attr('width', barW)
+            .attr('height', barH)
+            .attr('rx', 2)
+            .attr('fill', dark ? '#3b1a1a' : '#fecaca')
+            .attr('pointer-events', 'none');
 
-          lg.append('text')
-            .attr('x', d.x0 + 5 + barW)
-            .attr('y', barY + barH + 12)
-            .attr('fill', '#ef4444')
-            .attr('font-size', '9px')
-            .attr('font-weight', '600')
-            .attr('text-anchor', 'end')
-            .attr('pointer-events', 'none')
-            .text(`${noP}% N`);
+          // Yes portion
+          lg.append('rect')
+            .attr('x', d.x0 + 5)
+            .attr('y', barY)
+            .attr('width', Math.max(2, barW * market.price))
+            .attr('height', barH)
+            .attr('rx', 2)
+            .attr('fill', dark ? '#166534' : '#22c55e')
+            .attr('pointer-events', 'none');
         }
-
-        // Background bar
-        lg.append('rect')
-          .attr('x', d.x0 + 5)
-          .attr('y', barY)
-          .attr('width', barW)
-          .attr('height', barH)
-          .attr('rx', 2)
-          .attr('fill', dark ? '#3b1a1a' : '#fecaca')
-          .attr('pointer-events', 'none');
-
-        // Yes portion
-        lg.append('rect')
-          .attr('x', d.x0 + 5)
-          .attr('y', barY)
-          .attr('width', Math.max(2, barW * market.price))
-          .attr('height', barH)
-          .attr('rx', 2)
-          .attr('fill', dark ? '#166534' : '#22c55e')
-          .attr('pointer-events', 'none');
       }
     });
 
@@ -553,8 +605,24 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
           <div className="text-green-400 text-xl font-bold mb-2">
             {formatVolume(tooltip.volume)}
           </div>
-          {/* Yes / No odds */}
-          {tooltip.yesPrice != null && tooltip.yesPrice > 0 && tooltip.yesPrice < 1 && (
+          {/* Multi-outcome odds */}
+          {tooltip.outcomes && tooltip.outcomes.length > 1 ? (
+            <div className="mb-2">
+              <div className="text-[10px] text-gray-500 uppercase tracking-wider mb-1.5">{tooltip.outcomes.length} outcomes</div>
+              <div className="space-y-1">
+                {tooltip.outcomes.slice(0, 6).map((o, i) => {
+                  const colors = ['#3b82f6', '#8b5cf6', '#f59e0b', '#ec4899', '#14b8a6', '#6b7280'];
+                  return (
+                    <div key={i} className="flex items-center gap-2">
+                      <div className="h-1.5 rounded-full flex-shrink-0" style={{ width: `${Math.max(4, o.price * 80)}px`, backgroundColor: colors[i] || colors[5] }} />
+                      <span className="text-white text-xs font-semibold w-8 text-right">{Math.round(o.price * 100)}%</span>
+                      <span className="text-gray-300 text-xs truncate">{o.name}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : tooltip.yesPrice != null && tooltip.yesPrice > 0 && tooltip.yesPrice < 1 ? (
             <div className="mb-2">
               <div className="flex items-center justify-between text-sm mb-1">
                 <span className="text-green-400 font-semibold">Yes {Math.round(tooltip.yesPrice * 100)}%</span>
@@ -567,7 +635,7 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
                 />
               </div>
             </div>
-          )}
+          ) : null}
           <div className="text-gray-300 text-sm space-y-1">
             <div className="flex justify-between gap-4">
               <span className="text-white">{tooltip.percentTotal.toFixed(1)}%</span>
