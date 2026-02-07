@@ -6,6 +6,8 @@ import CryptoTicker from './CryptoTicker';
 import { Market, ApiResponse, Timeframe } from '@/lib/types';
 import { buildTreemapData, getVolumeForTimeframe } from '@/lib/utils';
 
+type Platform = 'polymarket' | 'kalshi';
+
 const TIMEFRAMES: { key: Timeframe; label: string }[] = [
   { key: '24h', label: '24h' },
   { key: '1w', label: '1W' },
@@ -15,21 +17,25 @@ const TIMEFRAMES: { key: Timeframe; label: string }[] = [
 ];
 
 export default function Dashboard() {
-  const [markets, setMarkets] = useState<Market[]>([]);
+  const [polyMarkets, setPolyMarkets] = useState<Market[]>([]);
+  const [kalshiMarkets, setKalshiMarkets] = useState<Market[]>([]);
   const [loading, setLoading] = useState(true);
+  const [kalshiLoading, setKalshiLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>('');
   const [timeframe, setTimeframe] = useState<Timeframe>('24h');
+  const [platform, setPlatform] = useState<Platform>('polymarket');
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
 
+  // Fetch Polymarket data
   useEffect(() => {
-    async function fetchData() {
+    async function fetchPolymarket() {
       try {
         setLoading(true);
         const res = await fetch('/api/markets');
         if (!res.ok) throw new Error('Failed to fetch');
         const data: ApiResponse = await res.json();
-        setMarkets(data.markets);
+        setPolyMarkets(data.markets);
         setLastUpdated(new Date(data.lastUpdated).toLocaleTimeString());
         setError(null);
       } catch (err) {
@@ -40,8 +46,29 @@ export default function Dashboard() {
       }
     }
 
-    fetchData();
-    const interval = setInterval(fetchData, 5 * 60 * 1000);
+    fetchPolymarket();
+    const interval = setInterval(fetchPolymarket, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Fetch Kalshi data
+  useEffect(() => {
+    async function fetchKalshi() {
+      try {
+        setKalshiLoading(true);
+        const res = await fetch('/api/kalshi');
+        if (!res.ok) throw new Error('Failed to fetch Kalshi');
+        const data: ApiResponse = await res.json();
+        setKalshiMarkets(data.markets);
+      } catch (err) {
+        console.error('Kalshi fetch error:', err);
+      } finally {
+        setKalshiLoading(false);
+      }
+    }
+
+    fetchKalshi();
+    const interval = setInterval(fetchKalshi, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
 
@@ -50,7 +77,7 @@ export default function Dashboard() {
       const container = document.getElementById('treemap-container');
       if (container) {
         const width = container.clientWidth || window.innerWidth - 40;
-        const height = Math.max(600, window.innerHeight - 200);
+        const height = Math.max(600, window.innerHeight - 280);
         setDimensions({ width, height });
       }
     }
@@ -63,19 +90,22 @@ export default function Dashboard() {
     };
   }, [loading]);
 
+  const currentMarkets = platform === 'polymarket' ? polyMarkets : kalshiMarkets;
+  const isCurrentLoading = platform === 'polymarket' ? loading : kalshiLoading;
+
   const treemapData = useMemo(() => {
-    return buildTreemapData(markets, timeframe);
-  }, [markets, timeframe]);
+    return buildTreemapData(currentMarkets, timeframe);
+  }, [currentMarkets, timeframe]);
 
   const totalVolume = useMemo(() => {
-    return markets.reduce((sum, m) => sum + getVolumeForTimeframe(m, timeframe), 0);
-  }, [markets, timeframe]);
+    return currentMarkets.reduce((sum, m) => sum + getVolumeForTimeframe(m, timeframe), 0);
+  }, [currentMarkets, timeframe]);
 
   const handleMarketClick = (market: Market) => {
     window.open(market.url, '_blank');
   };
 
-  if (loading) {
+  if (loading && kalshiLoading) {
     return (
       <div className="flex items-center justify-center h-screen bg-white">
         <div className="text-center">
@@ -86,7 +116,7 @@ export default function Dashboard() {
     );
   }
 
-  if (error) {
+  if (error && platform === 'polymarket') {
     return (
       <div className="flex items-center justify-center h-screen bg-white">
         <div className="text-center">
@@ -117,21 +147,49 @@ export default function Dashboard() {
             </p>
           </div>
 
-          {/* Timeframe Selector */}
-          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
-            {TIMEFRAMES.map(tf => (
+          <div className="flex items-center gap-3">
+            {/* Platform Selector */}
+            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
               <button
-                key={tf.key}
-                onClick={() => setTimeframe(tf.key)}
-                className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
-                  timeframe === tf.key
+                onClick={() => setPlatform('polymarket')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition flex items-center gap-1.5 ${
+                  platform === 'polymarket'
                     ? 'bg-white text-gray-900 shadow-sm'
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
               >
-                {tf.label}
+                <span className="w-2 h-2 rounded-full bg-blue-500 inline-block" />
+                Polymarket
               </button>
-            ))}
+              <button
+                onClick={() => setPlatform('kalshi')}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition flex items-center gap-1.5 ${
+                  platform === 'kalshi'
+                    ? 'bg-white text-gray-900 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                Kalshi
+              </button>
+            </div>
+
+            {/* Timeframe Selector */}
+            <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+              {TIMEFRAMES.map(tf => (
+                <button
+                  key={tf.key}
+                  onClick={() => setTimeframe(tf.key)}
+                  className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${
+                    timeframe === tf.key
+                      ? 'bg-white text-gray-900 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  {tf.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -140,7 +198,14 @@ export default function Dashboard() {
 
         {/* Treemap */}
         <div id="treemap-container" className="w-full mt-3" style={{ minHeight: '600px' }}>
-          {dimensions.width > 0 && dimensions.height > 0 && (
+          {isCurrentLoading ? (
+            <div className="flex items-center justify-center h-96 text-gray-400 text-sm">
+              <div className="text-center">
+                <div className="w-8 h-8 border-2 border-gray-300 border-t-gray-600 rounded-full animate-spin mx-auto mb-3" />
+                Loading {platform === 'kalshi' ? 'Kalshi' : 'Polymarket'} data...
+              </div>
+            </div>
+          ) : dimensions.width > 0 && dimensions.height > 0 ? (
             <Treemap
               data={treemapData}
               width={dimensions.width}
@@ -149,8 +214,7 @@ export default function Dashboard() {
               totalVolume={totalVolume}
               timeframeLabel={TIMEFRAMES.find(t => t.key === timeframe)?.label || '24h'}
             />
-          )}
-          {dimensions.width === 0 && (
+          ) : (
             <div className="flex items-center justify-center h-96 text-gray-400 text-sm">
               Loading treemap...
             </div>
@@ -159,7 +223,7 @@ export default function Dashboard() {
 
         {/* Footer */}
         <div className="mt-3 text-center text-gray-400 text-xs">
-          Data from Polymarket API &middot; Click any market to view on Polymarket
+          Data from {platform === 'polymarket' ? 'Polymarket' : 'Kalshi'} API &middot; Click any market to view on {platform === 'polymarket' ? 'Polymarket' : 'Kalshi'}
         </div>
       </div>
     </div>
