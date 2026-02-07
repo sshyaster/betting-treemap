@@ -1,4 +1,4 @@
-export type Timeframe = '24h' | '1w' | '1m' | '1y' | 'all';
+export type Timeframe = '24h' | '1w' | '1m' | '1y' | 'all' | 'oi';
 
 export interface Market {
   id: string;

@@ -25,10 +25,10 @@ function mapCategory(kalshiCategory: string): string {
 
 export async function fetchKalshiMarkets(): Promise<Market[]> {
   try {
-    // Fetch events with nested markets (Kalshi returns volume per market)
+    // Fetch ALL events with nested markets (paginated)
     const allEvents: any[] = [];
     let cursor = '';
-    const maxPages = 3; // Up to 600 events
+    const maxPages = 10; // Up to 2000 events
 
     for (let page = 0; page < maxPages; page++) {
       const url = `${KALSHI_API}/events?limit=200&status=open&with_nested_markets=true${
@@ -53,7 +53,7 @@ export async function fetchKalshiMarkets(): Promise<Market[]> {
       const eventMarkets = event.markets || [];
       if (eventMarkets.length === 0) continue;
 
-      // Sum up volume across all markets in this event
+      // Sum up volume/OI across all markets in this event
       const volume24h = eventMarkets.reduce(
         (sum: number, m: any) => sum + (m.volume_24h || 0), 0
       );
@@ -64,8 +64,8 @@ export async function fetchKalshiMarkets(): Promise<Market[]> {
         (sum: number, m: any) => sum + (m.open_interest || 0), 0
       );
 
-      // Skip events with very low volume
-      if (volumeAll < 100) continue;
+      // Include events that have any meaningful activity
+      if (volumeAll <= 0 && openInterest <= 0) continue;
 
       // Get best yes price from first market
       const firstMarket = eventMarkets[0];
@@ -75,13 +75,14 @@ export async function fetchKalshiMarkets(): Promise<Market[]> {
 
       const category = mapCategory(event.category || 'Other');
       const eventTicker = event.event_ticker || '';
+      const seriesTicker = event.series_ticker || eventTicker;
 
       markets.push({
         id: `kl-${eventTicker}`,
         title: event.title || 'Untitled',
-        volume: volume24h, // Use 24h as default volume
+        volume: volume24h,
         volume24hr: volume24h,
-        // Kalshi only provides 24h and all-time, estimate others
+        // Kalshi only provides 24h and all-time, estimate the rest
         volume1wk: Math.min(volume24h * 7, volumeAll),
         volume1mo: Math.min(volume24h * 30, volumeAll),
         volume1yr: volumeAll,
@@ -89,12 +90,12 @@ export async function fetchKalshiMarkets(): Promise<Market[]> {
         openInterest,
         category,
         platform: 'kalshi' as const,
-        url: `https://kalshi.com/markets/${event.series_ticker || eventTicker}`,
+        url: `https://kalshi.com/markets/${seriesTicker}`,
         price: yesPrice,
       });
     }
 
-    return markets.sort((a, b) => b.volume24hr - a.volume24hr);
+    return markets.sort((a, b) => b.openInterest - a.openInterest);
   } catch (error) {
     console.error('Kalshi fetch error:', error);
     return [];

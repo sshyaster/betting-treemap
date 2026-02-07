@@ -17,6 +17,7 @@ const TIMEFRAMES: { key: Timeframe; label: string }[] = [
   { key: '1m', label: '1M' },
   { key: '1y', label: '1Y' },
   { key: 'all', label: 'All' },
+  { key: 'oi', label: 'Open Interest' },
 ];
 
 const TABS: { key: Tab; label: string; icon: string }[] = [
@@ -178,7 +179,7 @@ export default function Dashboard() {
               {tab === 'markets' && (
                 <div className="flex items-center gap-1 bg-white/10 rounded-lg p-0.5">
                   <button
-                    onClick={() => setPlatform('polymarket')}
+                    onClick={() => { setPlatform('polymarket'); if (timeframe === 'oi') setTimeframe('24h'); }}
                     className={`px-3 py-1.5 text-xs font-medium rounded-md transition flex items-center gap-1.5 ${
                       platform === 'polymarket'
                         ? 'bg-white text-gray-900 shadow-sm'
@@ -189,7 +190,7 @@ export default function Dashboard() {
                     Polymarket
                   </button>
                   <button
-                    onClick={() => setPlatform('kalshi')}
+                    onClick={() => { setPlatform('kalshi'); setTimeframe('oi'); }}
                     className={`px-3 py-1.5 text-xs font-medium rounded-md transition flex items-center gap-1.5 ${
                       platform === 'kalshi'
                         ? 'bg-white text-gray-900 shadow-sm'

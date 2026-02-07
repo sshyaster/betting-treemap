@@ -14,6 +14,7 @@ export function getVolumeForTimeframe(market: Market, timeframe: Timeframe): num
     case '1m': return market.volume1mo;
     case '1y': return market.volume1yr;
     case 'all': return market.volumeAll;
+    case 'oi': return market.openInterest;
   }
 }
 

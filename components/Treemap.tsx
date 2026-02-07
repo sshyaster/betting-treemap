@@ -316,7 +316,7 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
           ))}
         </div>
         <div className="text-sm text-gray-600">
-          {timeframeLabel} Volume{' '}
+          {timeframeLabel === 'Open Interest' ? 'Open Interest' : `${timeframeLabel} Volume`}{' '}
           <span className="font-bold text-gray-900">{formatVolume(totalVolume)}</span>
         </div>
       </div>
