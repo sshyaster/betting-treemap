@@ -48,6 +48,18 @@ const CATEGORY_FRAME: Record<string, string> = {
   'Other': '#e8e0f4',
 };
 
+// Leaf node fills — very light tint of category color
+const CATEGORY_LEAF: Record<string, string> = {
+  'Politics': '#f0f7f0',
+  'Sports': '#edf5fc',
+  'Crypto': '#fdf0f4',
+  'Economics': '#f2f7e8',
+  'Tech': '#f4eef8',
+  'Entertainment': '#fdf4ec',
+  'World': '#ecf4f2',
+  'Other': '#f2eef8',
+};
+
 export default function Treemap({ data, width, height, onMarketClick, totalVolume, timeframeLabel = '24h' }: TreemapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
@@ -190,13 +202,16 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
       .append('g')
       .attr('class', 'leaf');
 
-    // White rectangle
+    // Color-coded leaf rectangle
     leafGroups.append('rect')
       .attr('x', d => d.x0)
       .attr('y', d => d.y0)
       .attr('width', d => Math.max(0, d.x1 - d.x0))
       .attr('height', d => Math.max(0, d.y1 - d.y0))
-      .attr('fill', '#ffffff')
+      .attr('fill', d => {
+        const cat = getCategoryName(d);
+        return CATEGORY_LEAF[cat] || CATEGORY_LEAF['Other'];
+      })
       .attr('stroke', '#bbb')
       .attr('stroke-width', 1)
       .attr('cursor', 'pointer')

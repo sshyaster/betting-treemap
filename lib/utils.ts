@@ -139,8 +139,10 @@ export function buildTreemapData(markets: Market[], timeframe: Timeframe = '24h'
     });
   }
 
-  // Sort categories by volume
+  // Sort categories by volume, but always push "Other" to the end
   categoryChildren.sort((a, b) => {
+    if (a.name === 'Other') return 1;
+    if (b.name === 'Other') return -1;
     const aVol = a.children?.reduce((s, sub) => s + (sub.children?.reduce((s2, c) => s2 + (c.value || 0), 0) || 0), 0) || 0;
     const bVol = b.children?.reduce((s, sub) => s + (sub.children?.reduce((s2, c) => s2 + (c.value || 0), 0) || 0), 0) || 0;
     return bVol - aVol;
