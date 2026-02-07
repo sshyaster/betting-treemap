@@ -21,6 +21,7 @@ interface TooltipData {
   percentTotal: number;
   percentParent?: number;
   parentName?: string;
+  yesPrice?: number;
   x: number;
   y: number;
 }
@@ -371,12 +372,15 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
         const parentValue = d.parent?.value;
         const percentParent = parentValue ? ((d.value || 0) / parentValue) * 100 : undefined;
 
+        const market = (d.data as TreemapData & { market?: Market })?.market;
+
         setTooltip({
           title: d.data?.name || '',
           volume: d.value || 0,
           percentTotal,
           percentParent,
           parentName: d.parent?.data?.name,
+          yesPrice: market?.price,
           x: event.pageX,
           y: event.pageY,
         });
@@ -428,6 +432,58 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
           .attr('font-weight', '400')
           .attr('pointer-events', 'none')
           .text(formatVolume(d.value || 0));
+      }
+
+      // Yes/No ratio bar + labels on tiles with enough space
+      const market = (d.data as TreemapData & { market?: Market })?.market;
+      if (market?.price != null && market.price > 0 && market.price < 1 && h >= 48 && w >= 70) {
+        const yesP = Math.round(market.price * 100);
+        const noP = 100 - yesP;
+        const barY = h >= 58 ? d.y0 + 34 : d.y0 + 32;
+        const barH = 5;
+        const barW = Math.min(w - 10, 120);
+
+        // Yes/No text
+        if (h >= 58) {
+          lg.append('text')
+            .attr('x', d.x0 + 5)
+            .attr('y', barY + barH + 12)
+            .attr('fill', '#22c55e')
+            .attr('font-size', '9px')
+            .attr('font-weight', '600')
+            .attr('pointer-events', 'none')
+            .text(`Y ${yesP}%`);
+
+          lg.append('text')
+            .attr('x', d.x0 + 5 + barW)
+            .attr('y', barY + barH + 12)
+            .attr('fill', '#ef4444')
+            .attr('font-size', '9px')
+            .attr('font-weight', '600')
+            .attr('text-anchor', 'end')
+            .attr('pointer-events', 'none')
+            .text(`${noP}% N`);
+        }
+
+        // Background bar
+        lg.append('rect')
+          .attr('x', d.x0 + 5)
+          .attr('y', barY)
+          .attr('width', barW)
+          .attr('height', barH)
+          .attr('rx', 2)
+          .attr('fill', dark ? '#3b1a1a' : '#fecaca')
+          .attr('pointer-events', 'none');
+
+        // Yes portion
+        lg.append('rect')
+          .attr('x', d.x0 + 5)
+          .attr('y', barY)
+          .attr('width', Math.max(2, barW * market.price))
+          .attr('height', barH)
+          .attr('rx', 2)
+          .attr('fill', dark ? '#166534' : '#22c55e')
+          .attr('pointer-events', 'none');
       }
     });
 
@@ -497,6 +553,21 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
           <div className="text-green-400 text-xl font-bold mb-2">
             {formatVolume(tooltip.volume)}
           </div>
+          {/* Yes / No odds */}
+          {tooltip.yesPrice != null && tooltip.yesPrice > 0 && tooltip.yesPrice < 1 && (
+            <div className="mb-2">
+              <div className="flex items-center justify-between text-sm mb-1">
+                <span className="text-green-400 font-semibold">Yes {Math.round(tooltip.yesPrice * 100)}%</span>
+                <span className="text-red-400 font-semibold">No {Math.round((1 - tooltip.yesPrice) * 100)}%</span>
+              </div>
+              <div className="w-full h-2 rounded-full bg-red-900/40 overflow-hidden">
+                <div
+                  className="h-full rounded-full bg-green-500"
+                  style={{ width: `${tooltip.yesPrice * 100}%` }}
+                />
+              </div>
+            </div>
+          )}
           <div className="text-gray-300 text-sm space-y-1">
             <div className="flex justify-between gap-4">
               <span className="text-white">{tooltip.percentTotal.toFixed(1)}%</span>
