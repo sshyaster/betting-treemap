@@ -5,11 +5,12 @@ import Treemap from './Treemap';
 import CryptoTicker from './CryptoTicker';
 import CryptoDashboard from './CryptoDashboard';
 import Insights from './Insights';
+import DataTable from './DataTable';
 import { Market, ApiResponse, Timeframe } from '@/lib/types';
 import { buildTreemapData, getVolumeForTimeframe } from '@/lib/utils';
 
 type Platform = 'polymarket' | 'kalshi';
-type Tab = 'markets' | 'crypto' | 'insights';
+type Tab = 'markets' | 'crypto' | 'insights' | 'data';
 
 const TIMEFRAMES: { key: Timeframe; label: string }[] = [
   { key: '24h', label: '24h' },
@@ -24,6 +25,7 @@ const TABS: { key: Tab; label: string; icon: string }[] = [
   { key: 'markets', label: 'Markets', icon: '◧' },
   { key: 'crypto', label: 'Crypto', icon: '◈' },
   { key: 'insights', label: 'Insights', icon: '◉' },
+  { key: 'data', label: 'Data', icon: '◫' },
 ];
 
 export default function Dashboard() {
@@ -204,7 +206,7 @@ export default function Dashboard() {
               )}
 
               {/* Timeframe toggle */}
-              {(tab === 'markets' || tab === 'insights') && (
+              {(tab === 'markets' || tab === 'insights' || tab === 'data') && (
                 <div className="flex items-center gap-1 bg-white/10 rounded-lg p-0.5">
                   {TIMEFRAMES.map(tf => (
                     <button
@@ -271,6 +273,15 @@ export default function Dashboard() {
         {/* Insights Tab */}
         {tab === 'insights' && (
           <Insights
+            polyMarkets={polyMarkets}
+            kalshiMarkets={kalshiMarkets}
+            timeframe={timeframe}
+          />
+        )}
+
+        {/* Data Tab */}
+        {tab === 'data' && (
+          <DataTable
             polyMarkets={polyMarkets}
             kalshiMarkets={kalshiMarkets}
             timeframe={timeframe}
