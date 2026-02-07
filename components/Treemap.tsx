@@ -102,9 +102,15 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
   const [viewStack, setViewStack] = useState<TreemapData[]>([data]);
   const [isAnimating, setIsAnimating] = useState(false);
+  const isAnimatingRef = useRef(false);
   // Store the bounding box of the clicked node for zoom origin
   const zoomTargetRef = useRef<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
   const zoomDirectionRef = useRef<'in' | 'out'>('in');
+
+  // Keep ref in sync with state so D3 click handlers always see current value
+  useEffect(() => {
+    isAnimatingRef.current = isAnimating;
+  }, [isAnimating]);
 
   const currentView = viewStack[viewStack.length - 1];
 
@@ -113,21 +119,23 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
   }, [data]);
 
   const drillDown = useCallback((node: TreemapData, bounds?: { x0: number; y0: number; x1: number; y1: number }) => {
-    if (node.children && node.children.length > 0 && !isAnimating) {
+    if (node.children && node.children.length > 0 && !isAnimatingRef.current) {
       zoomTargetRef.current = bounds || null;
       zoomDirectionRef.current = 'in';
+      isAnimatingRef.current = true;
       setIsAnimating(true);
       setViewStack(prev => [...prev, node]);
     }
-  }, [isAnimating]);
+  }, []);
 
   const goBack = useCallback((index: number) => {
-    if (isAnimating) return;
+    if (isAnimatingRef.current) return;
     zoomTargetRef.current = null;
     zoomDirectionRef.current = 'out';
+    isAnimatingRef.current = true;
     setIsAnimating(true);
     setViewStack(prev => prev.slice(0, index + 1));
-  }, [isAnimating]);
+  }, []);
 
   const getCategoryName = useCallback((d: d3.HierarchyRectangularNode<TreemapData>): string => {
     let node: d3.HierarchyRectangularNode<TreemapData> | null = d;
@@ -210,7 +218,10 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
           .delay(ZOOM_DURATION * 0.3)
           .duration(ZOOM_DURATION * 0.7)
           .style('opacity', 1)
-          .on('end', () => setIsAnimating(false));
+          .on('end', () => {
+            isAnimatingRef.current = false;
+            setIsAnimating(false);
+          });
 
       } else {
         // Zoom OUT: old content fades, new content zooms from center to normal
@@ -236,7 +247,10 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
           .duration(ZOOM_DURATION * 0.8)
           .attr('transform', 'translate(0,0) scale(1,1)')
           .style('opacity', 1)
-          .on('end', () => setIsAnimating(false));
+          .on('end', () => {
+            isAnimatingRef.current = false;
+            setIsAnimating(false);
+          });
       }
 
       zoomTargetRef.current = null;
