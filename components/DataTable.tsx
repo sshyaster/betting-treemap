@@ -182,13 +182,21 @@ export default function DataTable({ polyMarkets, kalshiMarkets, timeframe, dark 
                 <th className={`text-right px-4 py-3 font-medium text-xs uppercase tracking-wider cursor-pointer select-none ${dark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'}`} onClick={() => handleSort('volume')}>
                   Volume<SortIcon col="volume" />
                 </th>
+                <th className={`text-center px-4 py-3 font-medium text-xs uppercase tracking-wider ${dark ? 'text-gray-400' : 'text-gray-500'}`}>
+                  Yes / No
+                </th>
                 <th className={`text-right px-4 py-3 font-medium text-xs uppercase tracking-wider cursor-pointer select-none ${dark ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900'}`} onClick={() => handleSort('openInterest')}>
                   Open Interest<SortIcon col="openInterest" />
                 </th>
               </tr>
             </thead>
             <tbody>
-              {filtered.slice(0, 100).map((market) => (
+              {filtered.slice(0, 100).map((market) => {
+                const yesPrice = market.price != null ? Number(market.price) : null;
+                const yesPct = yesPrice != null && yesPrice > 0 && yesPrice < 1 ? Math.round(yesPrice * 100) : null;
+                const noPct = yesPct != null ? 100 - yesPct : null;
+
+                return (
                 <tr
                   key={market.id}
                   className={`border-b transition cursor-pointer ${dark ? 'border-gray-800/50 hover:bg-gray-800/50' : 'border-gray-100 hover:bg-gray-50'}`}
@@ -211,11 +219,26 @@ export default function DataTable({ polyMarkets, kalshiMarkets, timeframe, dark 
                   <td className={`px-4 py-3 text-right font-mono text-xs ${dark ? 'text-gray-200' : 'text-gray-700'}`}>
                     {formatVolume(getVolumeForTimeframe(market, timeframe))}
                   </td>
+                  <td className="px-4 py-3">
+                    {yesPct != null && noPct != null ? (
+                      <div className="flex items-center gap-1.5 justify-center">
+                        <span className="text-[10px] font-semibold text-green-500 w-7 text-right tabular-nums">{yesPct}¢</span>
+                        <div className={`w-14 h-2 rounded-full overflow-hidden flex ${dark ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                          <div className="h-full rounded-l-full" style={{ width: `${yesPct}%`, backgroundColor: '#22c55e' }} />
+                          <div className="h-full rounded-r-full" style={{ width: `${noPct}%`, backgroundColor: '#ef4444' }} />
+                        </div>
+                        <span className="text-[10px] font-semibold text-red-500 w-7 tabular-nums">{noPct}¢</span>
+                      </div>
+                    ) : (
+                      <span className={`text-[10px] ${dark ? 'text-gray-600' : 'text-gray-300'}`}>—</span>
+                    )}
+                  </td>
                   <td className={`px-4 py-3 text-right font-mono text-xs ${dark ? 'text-gray-200' : 'text-gray-700'}`}>
                     {formatVolume(market.openInterest)}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>

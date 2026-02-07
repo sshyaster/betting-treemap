@@ -32,14 +32,14 @@ interface CrosshairData {
 }
 
 const COINS = [
-  { id: 'bitcoin', symbol: 'BTC', name: 'Bitcoin', pair: 'XBTUSD', resultKey: 'XXBTZUSD', color: '#F7931A' },
-  { id: 'ethereum', symbol: 'ETH', name: 'Ethereum', pair: 'ETHUSD', resultKey: 'XETHZUSD', color: '#627EEA' },
-  { id: 'solana', symbol: 'SOL', name: 'Solana', pair: 'SOLUSD', resultKey: 'SOLUSD', color: '#9945FF' },
-  { id: 'dogecoin', symbol: 'DOGE', name: 'Dogecoin', pair: 'DOGEUSD', resultKey: 'XDGUSD', color: '#C2A633' },
-  { id: 'xrp', symbol: 'XRP', name: 'XRP', pair: 'XRPUSD', resultKey: 'XXRPZUSD', color: '#00AAE4' },
-  { id: 'cardano', symbol: 'ADA', name: 'Cardano', pair: 'ADAUSD', resultKey: 'ADAUSD', color: '#0033AD' },
-  { id: 'avalanche', symbol: 'AVAX', name: 'Avalanche', pair: 'AVAXUSD', resultKey: 'AVAXUSD', color: '#E84142' },
-  { id: 'chainlink', symbol: 'LINK', name: 'Chainlink', pair: 'LINKUSD', resultKey: 'LINKUSD', color: '#2A5ADA' },
+  { id: 'bitcoin', symbol: 'BTC', name: 'Bitcoin', pair: 'XBTUSD', resultKey: 'XXBTZUSD', color: '#F7931A', logo: 'https://assets.coingecko.com/coins/images/1/small/bitcoin.png' },
+  { id: 'ethereum', symbol: 'ETH', name: 'Ethereum', pair: 'ETHUSD', resultKey: 'XETHZUSD', color: '#627EEA', logo: 'https://assets.coingecko.com/coins/images/279/small/ethereum.png' },
+  { id: 'solana', symbol: 'SOL', name: 'Solana', pair: 'SOLUSD', resultKey: 'SOLUSD', color: '#9945FF', logo: 'https://assets.coingecko.com/coins/images/4128/small/solana.png' },
+  { id: 'dogecoin', symbol: 'DOGE', name: 'Dogecoin', pair: 'DOGEUSD', resultKey: 'XDGUSD', color: '#C2A633', logo: 'https://assets.coingecko.com/coins/images/5/small/dogecoin.png' },
+  { id: 'xrp', symbol: 'XRP', name: 'XRP', pair: 'XRPUSD', resultKey: 'XXRPZUSD', color: '#00AAE4', logo: 'https://assets.coingecko.com/coins/images/44/small/xrp-symbol-white-128.png' },
+  { id: 'cardano', symbol: 'ADA', name: 'Cardano', pair: 'ADAUSD', resultKey: 'ADAUSD', color: '#0033AD', logo: 'https://assets.coingecko.com/coins/images/975/small/cardano.png' },
+  { id: 'avalanche', symbol: 'AVAX', name: 'Avalanche', pair: 'AVAXUSD', resultKey: 'AVAXUSD', color: '#E84142', logo: 'https://assets.coingecko.com/coins/images/12559/small/Avalanche_Circle_RedWhite_Trans.png' },
+  { id: 'chainlink', symbol: 'LINK', name: 'Chainlink', pair: 'LINKUSD', resultKey: 'LINKUSD', color: '#2A5ADA', logo: 'https://assets.coingecko.com/coins/images/877/small/chainlink-new-logo.png' },
 ];
 
 type ChartInterval = '15m' | '1h' | '4h' | '1d' | '1w' | 'ytd' | 'all';
@@ -237,12 +237,7 @@ export default function CryptoDashboard({ dark = false }: CryptoDashboardProps) 
                     : (dark ? 'hover:bg-[#1e2130] text-gray-300' : 'hover:bg-gray-100 text-gray-700')
                 }`}
               >
-                <div
-                  className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0"
-                  style={{ backgroundColor: coin.color }}
-                >
-                  {coin.symbol.slice(0, 1)}
-                </div>
+                <CoinLogo coin={coin} size={20} />
                 <span className="font-semibold">{coin.symbol}</span>
                 {summary && (
                   <>
@@ -267,12 +262,7 @@ export default function CryptoDashboard({ dark = false }: CryptoDashboardProps) 
           <div className="flex items-center gap-4">
             {/* Coin info */}
             <div className="flex items-center gap-2.5">
-              <div
-                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
-                style={{ backgroundColor: coinConfig.color }}
-              >
-                {coinConfig.symbol.slice(0, 2)}
-              </div>
+              <CoinLogo coin={coinConfig} size={32} />
               <div>
                 <div className={`text-sm font-bold ${textPrimary}`}>{coinConfig.name}</div>
                 <div className={`text-[11px] ${textMuted}`}>{coinConfig.symbol}/USD</div>
@@ -429,12 +419,7 @@ export default function CryptoDashboard({ dark = false }: CryptoDashboardProps) 
             >
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-1.5">
-                  <div
-                    className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white"
-                    style={{ backgroundColor: coin.color }}
-                  >
-                    {coin.symbol.slice(0, 1)}
-                  </div>
+                  <CoinLogo coin={coin} size={20} />
                   <span className={`font-semibold text-xs ${isSelected ? 'text-white' : textPrimary}`}>{coin.symbol}</span>
                 </div>
                 <span className={`text-[10px] font-semibold ${summary.change24h >= 0 ? 'text-green-500' : 'text-red-500'}`}>
@@ -830,6 +815,34 @@ function InteractiveChart({
 }
 
 // --- Sub-components ---
+function CoinLogo({ coin, size = 20 }: { coin: { logo: string; color: string; symbol: string }; size?: number }) {
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <div
+        className="rounded-full flex items-center justify-center text-white font-bold flex-shrink-0"
+        style={{ width: size, height: size, backgroundColor: coin.color, fontSize: size * 0.4 }}
+      >
+        {coin.symbol.slice(0, 1)}
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={coin.logo}
+      alt={coin.symbol}
+      width={size}
+      height={size}
+      className="rounded-full flex-shrink-0 object-cover"
+      style={{ width: size, height: size }}
+      onError={() => setFailed(true)}
+      referrerPolicy="no-referrer"
+    />
+  );
+}
+
 function StatCard({ label, value, dark, color }: { label: string; value: string; dark: boolean; color?: string }) {
   return (
     <div className={`rounded-xl border px-4 py-3 ${dark ? 'bg-[#181b25] border-[#2a2d3a]' : 'bg-white border-gray-200'}`}>

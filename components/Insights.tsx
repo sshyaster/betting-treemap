@@ -221,6 +221,7 @@ function HotMarketRow({ rank, market, timeframe, maxVol, dark }: { rank: number;
   const vol = getVolumeForTimeframe(market, timeframe);
   const barPct = maxVol > 0 ? (vol / maxVol) * 100 : 0;
   const color = CATEGORY_COLORS[market.category] || '#9ca3af';
+  const yesPrice = market.price != null ? Number(market.price) : null;
 
   return (
     <a
@@ -232,8 +233,14 @@ function HotMarketRow({ rank, market, timeframe, maxVol, dark }: { rank: number;
       <div className="flex items-start gap-3">
         <span className={`text-xs font-bold w-5 pt-0.5 text-right ${dark ? 'text-gray-600' : 'text-gray-300'}`}>{rank}</span>
         <div className="flex-1 min-w-0">
-          <div className={`text-sm font-medium group-hover:text-blue-400 transition truncate ${dark ? 'text-gray-200' : 'text-gray-900'}`}>
-            {market.title}
+          <div className="flex items-center gap-2">
+            <div className={`text-sm font-medium group-hover:text-blue-400 transition truncate flex-1 ${dark ? 'text-gray-200' : 'text-gray-900'}`}>
+              {market.title}
+            </div>
+            {/* YES/NO price gauge */}
+            {yesPrice != null && yesPrice > 0 && yesPrice < 1 && (
+              <PriceGauge yesPrice={yesPrice} dark={dark} />
+            )}
           </div>
           <div className="flex items-center gap-2 mt-1">
             <div className={`flex-1 h-1.5 rounded-full overflow-hidden ${dark ? 'bg-gray-700' : 'bg-gray-100'}`}>
@@ -245,5 +252,28 @@ function HotMarketRow({ rank, market, timeframe, maxVol, dark }: { rank: number;
         </div>
       </div>
     </a>
+  );
+}
+
+function PriceGauge({ yesPrice, dark }: { yesPrice: number; dark?: boolean }) {
+  const yesPct = Math.round(yesPrice * 100);
+  const noPct = 100 - yesPct;
+  const yesColor = yesPct >= 50 ? '#22c55e' : '#6b7280';
+  const noColor = noPct >= 50 ? '#ef4444' : '#6b7280';
+
+  return (
+    <div className="flex items-center gap-1.5 flex-shrink-0">
+      {/* Mini bar */}
+      <div className={`w-16 h-2.5 rounded-full overflow-hidden flex ${dark ? 'bg-gray-700' : 'bg-gray-100'}`}>
+        <div className="h-full rounded-l-full" style={{ width: `${yesPct}%`, backgroundColor: '#22c55e' }} />
+        <div className="h-full rounded-r-full" style={{ width: `${noPct}%`, backgroundColor: '#ef4444' }} />
+      </div>
+      {/* Labels */}
+      <div className="flex items-center gap-1 text-[10px] font-semibold tabular-nums">
+        <span style={{ color: yesColor }}>{yesPct}¢</span>
+        <span className={dark ? 'text-gray-600' : 'text-gray-300'}>/</span>
+        <span style={{ color: noColor }}>{noPct}¢</span>
+      </div>
+    </div>
   );
 }

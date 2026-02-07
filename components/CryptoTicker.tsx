@@ -280,22 +280,72 @@ function MiniChart({ data, positive }: { data: number[]; positive: boolean }) {
   );
 }
 
+// Crypto logo SVGs
 function CryptoIcon({ symbol }: { symbol: string }) {
-  const colors: Record<string, string> = {
-    BTC: '#F7931A',
-    ETH: '#627EEA',
-    SOL: '#00FFA3',
-    DOGE: '#C2A633',
-    XRP: '#23292F',
-    ADA: '#0033AD',
-  };
+  const size = 20;
 
-  return (
-    <div
-      className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
-      style={{ backgroundColor: colors[symbol] || '#666' }}
-    >
-      {symbol.slice(0, 1)}
-    </div>
-  );
+  switch (symbol) {
+    case 'BTC':
+      return (
+        <svg width={size} height={size} viewBox="0 0 32 32" className="flex-shrink-0">
+          <circle cx="16" cy="16" r="16" fill="#F7931A" />
+          <path fill="#fff" d="M22.5 14.2c.3-2-1.2-3.1-3.3-3.8l.7-2.7-1.7-.4-.7 2.6c-.4-.1-.9-.2-1.4-.3l.7-2.7-1.7-.4-.7 2.7c-.3-.1-.7-.2-1-.3l-2.3-.6-.4 1.8s1.2.3 1.2.3c.7.2.8.6.8 1l-.8 3.2c0 0 .1 0 .1 0l-.1 0-1.1 4.5c-.1.2-.3.5-.7.4 0 0-1.2-.3-1.2-.3l-.8 1.9 2.2.5c.4.1.8.2 1.2.3l-.7 2.8 1.7.4.7-2.7c.5.1.9.2 1.4.3l-.7 2.7 1.7.4.7-2.8c2.9.5 5.1.3 6-2.3.7-2.1 0-3.3-1.5-4.1 1.1-.3 1.9-1 2.1-2.5zm-3.8 5.3c-.5 2.1-4.1 1-5.3.7l.9-3.8c1.2.3 4.9.9 4.4 3.1zm.5-5.4c-.5 1.9-3.5.9-4.5.7l.9-3.4c1 .2 4.1.7 3.6 2.7z"/>
+        </svg>
+      );
+    case 'ETH':
+      return (
+        <svg width={size} height={size} viewBox="0 0 32 32" className="flex-shrink-0">
+          <circle cx="16" cy="16" r="16" fill="#627EEA" />
+          <path fill="#fff" fillOpacity=".6" d="M16 4v8.9l7.5 3.3z" />
+          <path fill="#fff" d="M16 4L8.5 16.2l7.5-3.3z" />
+          <path fill="#fff" fillOpacity=".6" d="M16 21.9v6.1l7.5-10.4z" />
+          <path fill="#fff" d="M16 28v-6.1l-7.5-4.3z" />
+          <path fill="#fff" fillOpacity=".2" d="M16 20.6l7.5-4.4L16 12.9z" />
+          <path fill="#fff" fillOpacity=".6" d="M8.5 16.2l7.5 4.4v-7.7z" />
+        </svg>
+      );
+    case 'SOL':
+      return (
+        <svg width={size} height={size} viewBox="0 0 32 32" className="flex-shrink-0">
+          <circle cx="16" cy="16" r="16" fill="#000" />
+          <defs><linearGradient id="sol-g" x1="5" y1="25" x2="27" y2="7" gradientUnits="userSpaceOnUse"><stop stopColor="#9945FF"/><stop offset="0.5" stopColor="#19FB9B"/><stop offset="1" stopColor="#00D1FF"/></linearGradient></defs>
+          <path d="M9.5 20.7c.1-.1.3-.2.5-.2h14.4c.3 0 .5.4.3.6l-2.4 2.4c-.1.1-.3.2-.5.2H7.4c-.3 0-.5-.4-.3-.6l2.4-2.4z" fill="url(#sol-g)"/>
+          <path d="M9.5 8.5c.1-.1.3-.2.5-.2h14.4c.3 0 .5.4.3.6l-2.4 2.4c-.1.1-.3.2-.5.2H7.4c-.3 0-.5-.4-.3-.6l2.4-2.4z" fill="url(#sol-g)"/>
+          <path d="M22.3 14.5c-.1-.1-.3-.2-.5-.2H7.4c-.3 0-.5.4-.3.6l2.4 2.4c.1.1.3.2.5.2h14.4c.3 0 .5-.4.3-.6l-2.4-2.4z" fill="url(#sol-g)"/>
+        </svg>
+      );
+    case 'DOGE':
+      return (
+        <svg width={size} height={size} viewBox="0 0 32 32" className="flex-shrink-0">
+          <circle cx="16" cy="16" r="16" fill="#C2A633" />
+          <text x="16" y="21" textAnchor="middle" fill="#fff" fontSize="14" fontWeight="bold" fontFamily="Arial">D</text>
+        </svg>
+      );
+    case 'XRP':
+      return (
+        <svg width={size} height={size} viewBox="0 0 32 32" className="flex-shrink-0">
+          <circle cx="16" cy="16" r="16" fill="#23292F" />
+          <path fill="#fff" d="M23.1 8h2.8l-5.5 5.4a6.2 6.2 0 01-8.8 0L6.1 8h2.8l4.1 4.1a4 4 0 005.6 0L23.1 8zM8.9 24H6.1l5.5-5.4a6.2 6.2 0 018.8 0L25.9 24h-2.8l-4.1-4.1a4 4 0 00-5.6 0L8.9 24z"/>
+        </svg>
+      );
+    case 'ADA':
+      return (
+        <svg width={size} height={size} viewBox="0 0 32 32" className="flex-shrink-0">
+          <circle cx="16" cy="16" r="16" fill="#0033AD" />
+          <circle cx="16" cy="10" r="1.8" fill="#fff"/>
+          <circle cx="16" cy="22" r="1.8" fill="#fff"/>
+          <circle cx="10" cy="13" r="1.5" fill="#fff"/>
+          <circle cx="22" cy="13" r="1.5" fill="#fff"/>
+          <circle cx="10" cy="19" r="1.5" fill="#fff"/>
+          <circle cx="22" cy="19" r="1.5" fill="#fff"/>
+          <circle cx="16" cy="16" r="2.5" fill="#fff"/>
+        </svg>
+      );
+    default:
+      return (
+        <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-white bg-gray-500 flex-shrink-0">
+          {symbol.slice(0, 1)}
+        </div>
+      );
+  }
 }
