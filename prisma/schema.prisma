@@ -1,0 +1,22 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Drawing {
+  id        String   @id @default(cuid())
+  userId    String
+  coinId    String
+  interval  String
+  toolType  String
+  points    Json     // Array of { price: number, time: number }
+  color     String   @default("#3b82f6")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, coinId, interval])
+}

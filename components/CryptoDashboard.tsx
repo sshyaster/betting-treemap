@@ -1,6 +1,12 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { DrawingToolType, DrawingPoint } from '@/lib/drawing-types';
+import { useDrawings } from '@/lib/use-drawings';
+import { useDrawingTool } from '@/lib/use-drawing-tool';
+import { pixelToData } from '@/lib/drawing-utils';
+import DrawingOverlay from './DrawingOverlay';
+import DrawingToolbar from './DrawingToolbar';
 
 interface Candle {
   time: number;
@@ -74,6 +80,10 @@ export default function CryptoDashboard({ dark = false }: CryptoDashboardProps) 
   const [fearGreed, setFearGreed] = useState<FearGreed | null>(null);
   const [crosshair, setCrosshair] = useState<CrosshairData | null>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Drawing tools state
+  const { drawings, addDrawing, deleteDrawing, clearDrawings } = useDrawings(selectedCoin, interval);
+  const drawingTool = useDrawingTool(selectedCoin, interval, addDrawing);
 
   const coinConfig = COINS.find(c => c.id === selectedCoin)!;
   const intervalConfig = INTERVALS.find(i => i.key === interval)!;
@@ -367,6 +377,17 @@ export default function CryptoDashboard({ dark = false }: CryptoDashboardProps) 
 
         {/* Chart */}
         <div className="relative" style={{ height: 480 }}>
+          <DrawingToolbar
+            activeTool={drawingTool.activeTool}
+            onToolChange={drawingTool.setActiveTool}
+            selectedColor={drawingTool.selectedColor}
+            onColorChange={drawingTool.setSelectedColor}
+            selectedDrawingId={drawingTool.selectedDrawingId}
+            onDeleteSelected={() => drawingTool.selectedDrawingId && deleteDrawing(drawingTool.selectedDrawingId)}
+            onClearAll={clearDrawings}
+            drawingCount={drawings.length}
+            dark={dark}
+          />
           {chartLoading ? (
             <div className="flex items-center justify-center h-full">
               <div className={`w-6 h-6 border-2 rounded-full animate-spin ${dark ? 'border-gray-700 border-t-gray-400' : 'border-gray-200 border-t-gray-600'}`} />
@@ -380,6 +401,17 @@ export default function CryptoDashboard({ dark = false }: CryptoDashboardProps) 
               onCrosshairChange={setCrosshair}
               formatPrice={formatPrice}
               formatTime={formatTime}
+              drawings={drawings}
+              activeTool={drawingTool.activeTool}
+              pendingPoints={drawingTool.pendingPoints}
+              previewPoint={drawingTool.previewPoint}
+              selectedColor={drawingTool.selectedColor}
+              selectedDrawingId={drawingTool.selectedDrawingId}
+              onDrawingClick={drawingTool.addPoint}
+              onPreviewUpdate={drawingTool.setPreviewPoint}
+              onSelectDrawing={drawingTool.setSelectedDrawingId}
+              onCancelTool={drawingTool.cancel}
+              onDeleteDrawing={deleteDrawing}
             />
           )}
         </div>
@@ -459,6 +491,8 @@ export default function CryptoDashboard({ dark = false }: CryptoDashboardProps) 
 // --- Interactive Chart Component with Zoom & Pan ---
 function InteractiveChart({
   candles, dark, chartType, coinColor, onCrosshairChange, formatPrice, formatTime,
+  drawings, activeTool, pendingPoints, previewPoint, selectedColor,
+  selectedDrawingId, onDrawingClick, onPreviewUpdate, onSelectDrawing, onCancelTool, onDeleteDrawing,
 }: {
   candles: Candle[];
   dark: boolean;
@@ -467,6 +501,17 @@ function InteractiveChart({
   onCrosshairChange: (data: CrosshairData | null) => void;
   formatPrice: (p: number) => string;
   formatTime: (ts: number) => string;
+  drawings: import('@/lib/drawing-types').Drawing[];
+  activeTool: DrawingToolType | null;
+  pendingPoints: import('@/lib/drawing-types').DrawingPoint[];
+  previewPoint: import('@/lib/drawing-types').DrawingPoint | null;
+  selectedColor: string;
+  selectedDrawingId: string | null;
+  onDrawingClick: (point: DrawingPoint) => void;
+  onPreviewUpdate: (point: DrawingPoint | null) => void;
+  onSelectDrawing: (id: string | null) => void;
+  onCancelTool: () => void;
+  onDeleteDrawing: (id: string) => void;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dims, setDims] = useState({ w: 0, h: 0 });
@@ -509,8 +554,8 @@ function InteractiveChart({
     return [s, e];
   }, [candles.length]);
 
-  // Mouse wheel zoom
-  const handleWheel = useCallback((e: React.WheelEvent) => {
+  // Mouse wheel zoom — native listener with { passive: false } to prevent page scroll
+  const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
     const range = viewEnd - viewStart;
     const zoomFactor = e.deltaY > 0 ? 0.1 : -0.1; // scroll down = zoom out
@@ -530,40 +575,29 @@ function InteractiveChart({
     setViewEnd(en);
   }, [viewStart, viewEnd, dims.w, clampView]);
 
-  // Drag to pan
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    isDragging.current = true;
-    dragStartX.current = e.clientX;
-    dragStartView.current = { start: viewStart, end: viewEnd };
-  }, [viewStart, viewEnd]);
+  // Attach wheel listener with passive: false so preventDefault works
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [handleWheel]);
 
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    const rect = containerRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-
-    if (isDragging.current) {
-      const dx = e.clientX - dragStartX.current;
-      const chartWidth = dims.w - 80;
-      const range = dragStartView.current.end - dragStartView.current.start;
-      const candleShift = -(dx / chartWidth) * range;
-      const newStart = dragStartView.current.start + candleShift;
-      const newEnd = dragStartView.current.end + candleShift;
-      const [s, en] = clampView(newStart, newEnd);
-      setViewStart(s);
-      setViewEnd(en);
-    }
-  }, [dims.w, clampView]);
-
-  const handleMouseUp = useCallback(() => {
-    isDragging.current = false;
-  }, []);
-
-  const handleMouseLeave = useCallback(() => {
-    isDragging.current = false;
-    setMousePos(null);
-    onCrosshairChange(null);
-  }, [onCrosshairChange]);
+  // Keyboard shortcuts for drawing tools
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onCancelTool();
+        onSelectDrawing(null);
+      }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedDrawingId) {
+        onDeleteDrawing(selectedDrawingId);
+        onSelectDrawing(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onCancelTool, onSelectDrawing, selectedDrawingId, onDeleteDrawing]);
 
   // Reset zoom button
   const handleResetZoom = useCallback(() => {
@@ -597,6 +631,57 @@ function InteractiveChart({
   const xScale = useCallback((i: number) => margin.left + (i / Math.max(1, visibleCandles.length - 1)) * chartW, [margin.left, visibleCandles.length, chartW]);
   const yScale = useCallback((price: number) => margin.top + (1 - (price - priceMin) / (priceMax - priceMin)) * (chartH - volH), [margin.top, priceMin, priceMax, chartH, volH]);
   const volScale = useCallback((vol: number) => (vol / volMax) * volH, [volMax, volH]);
+
+  // Drag to pan (or drawing click)
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if (activeTool) {
+      // Drawing mode: place a point
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const px = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      const point = pixelToData(px, visibleCandles, margin.left, chartW, margin.top, chartH, volH, priceMin, priceMax);
+      if (point) onDrawingClick(point);
+      return;
+    }
+    isDragging.current = true;
+    dragStartX.current = e.clientX;
+    dragStartView.current = { start: viewStart, end: viewEnd };
+  }, [viewStart, viewEnd, activeTool, visibleCandles, chartW, chartH, volH, priceMin, priceMax, onDrawingClick]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const px = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    setMousePos(px);
+
+    // Update drawing preview point
+    if (activeTool) {
+      const point = pixelToData(px, visibleCandles, margin.left, chartW, margin.top, chartH, volH, priceMin, priceMax);
+      onPreviewUpdate(point);
+    }
+
+    if (isDragging.current) {
+      const dx = e.clientX - dragStartX.current;
+      const chartWidth = dims.w - 80;
+      const range = dragStartView.current.end - dragStartView.current.start;
+      const candleShift = -(dx / chartWidth) * range;
+      const newStart = dragStartView.current.start + candleShift;
+      const newEnd = dragStartView.current.end + candleShift;
+      const [s, en] = clampView(newStart, newEnd);
+      setViewStart(s);
+      setViewEnd(en);
+    }
+  }, [dims.w, clampView, activeTool, visibleCandles, chartW, chartH, volH, priceMin, priceMax, onPreviewUpdate]);
+
+  const handleMouseUp = useCallback(() => {
+    isDragging.current = false;
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    isDragging.current = false;
+    setMousePos(null);
+    onCrosshairChange(null);
+  }, [onCrosshairChange]);
 
   // Find nearest candle to mouse
   const hoveredIdx = useMemo(() => {
@@ -642,12 +727,11 @@ function InteractiveChart({
   return (
     <div
       ref={containerRef}
-      className={`w-full h-full ${isDragging.current ? 'cursor-grabbing' : 'cursor-crosshair'}`}
+      className={`w-full h-full ${activeTool ? 'cursor-crosshair' : isDragging.current ? 'cursor-grabbing' : 'cursor-crosshair'}`}
       onMouseMove={handleMouseMove}
       onMouseDown={handleMouseDown}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseLeave}
-      onWheel={handleWheel}
     >
       {/* Reset zoom button */}
       {isZoomed && (
@@ -661,7 +745,9 @@ function InteractiveChart({
         </button>
       )}
 
-      <svg width={dims.w} height={dims.h} className="select-none">
+      <svg width={dims.w} height={dims.h} className="select-none"
+        onClick={() => { if (!activeTool && selectedDrawingId) onSelectDrawing(null); }}
+      >
         {/* Grid */}
         {gridLines.map((gl, i) => (
           <g key={i}>
@@ -751,6 +837,24 @@ function InteractiveChart({
             {formatTime(tl.time)}
           </text>
         ))}
+
+        {/* Drawing overlay */}
+        <DrawingOverlay
+          drawings={drawings}
+          visibleCandles={visibleCandles}
+          xScale={xScale}
+          yScale={yScale}
+          marginLeft={margin.left}
+          marginRight={margin.right}
+          chartWidth={dims.w}
+          selectedDrawingId={selectedDrawingId}
+          onSelect={onSelectDrawing}
+          dark={dark}
+          pendingTool={activeTool}
+          pendingPoints={pendingPoints}
+          previewPoint={previewPoint}
+          pendingColor={selectedColor}
+        />
 
         {/* Crosshair */}
         {hoveredIdx >= 0 && mousePos && !isDragging.current && (

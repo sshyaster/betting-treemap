@@ -7,6 +7,7 @@ import CryptoDashboard from './CryptoDashboard';
 import Insights from './Insights';
 import DataTable from './DataTable';
 import TwitterFeed from './TwitterFeed';
+import AuthButton from './AuthButton';
 import { Market, ApiResponse, Timeframe } from '@/lib/types';
 import { buildTreemapData, getVolumeForTimeframe } from '@/lib/utils';
 
@@ -211,6 +212,9 @@ export default function Dashboard() {
                   ))}
                 </div>
               )}
+
+              {/* Auth */}
+              <AuthButton dark={dark} />
 
               {/* Dark mode toggle */}
               <button
