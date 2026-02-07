@@ -30,7 +30,11 @@ const COINS = [
   { id: 'chainlink', symbol: 'LINK', name: 'Chainlink', pair: 'LINKUSD', resultKey: 'LINKUSD', color: '#2A5ADA' },
 ];
 
-export default function CryptoDashboard() {
+interface CryptoDashboardProps {
+  dark?: boolean;
+}
+
+export default function CryptoDashboard({ dark = false }: CryptoDashboardProps) {
   const [coins, setCoins] = useState<Record<string, CoinData>>({});
   const [fearGreed, setFearGreed] = useState<FearGreed | null>(null);
   const [selectedCoin, setSelectedCoin] = useState<string>('bitcoin');
@@ -193,7 +197,7 @@ export default function CryptoDashboard() {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 animate-pulse">
         {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="bg-gray-50 rounded-xl p-5 border border-gray-100 h-40" />
+          <div key={i} className={`rounded-xl p-5 border h-40 ${dark ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-100'}`} />
         ))}
       </div>
     );
@@ -207,8 +211,8 @@ export default function CryptoDashboard() {
       {/* Top row: Fear & Greed + Featured coin chart */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Fear & Greed Gauge */}
-        <div className="bg-gray-50 rounded-xl border border-gray-200 p-5 flex flex-col items-center justify-center">
-          <div className="text-xs text-gray-500 uppercase tracking-wider mb-3">Fear & Greed Index</div>
+        <div className={`rounded-xl border p-5 flex flex-col items-center justify-center ${dark ? 'bg-[#1a1d27] border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
+          <div className={`text-xs uppercase tracking-wider mb-3 ${dark ? 'text-gray-400' : 'text-gray-500'}`}>Fear & Greed Index</div>
           {fearGreed ? (
             <>
               <FearGreedGauge value={fearGreed.value} />
@@ -218,7 +222,7 @@ export default function CryptoDashboard() {
               }}>
                 {fearGreed.value}
               </div>
-              <div className="text-sm text-gray-600 font-medium">{fearGreed.classification}</div>
+              <div className={`text-sm font-medium ${dark ? 'text-gray-400' : 'text-gray-600'}`}>{fearGreed.classification}</div>
             </>
           ) : (
             <div className="text-gray-400 text-sm">Loading...</div>
@@ -226,7 +230,7 @@ export default function CryptoDashboard() {
         </div>
 
         {/* Featured coin large chart */}
-        <div className="lg:col-span-2 bg-gray-50 rounded-xl border border-gray-200 p-5">
+        <div className={`lg:col-span-2 rounded-xl border p-5 ${dark ? 'bg-[#1a1d27] border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold"
@@ -234,30 +238,30 @@ export default function CryptoDashboard() {
                 {selected?.symbol?.slice(0, 2)}
               </div>
               <div>
-                <div className="text-lg font-bold text-gray-900">{selected?.name}</div>
-                <div className="text-xs text-gray-500">{selected?.symbol}/USD</div>
+                <div className={`text-lg font-bold ${dark ? 'text-gray-100' : 'text-gray-900'}`}>{selected?.name}</div>
+                <div className={`text-xs ${dark ? 'text-gray-500' : 'text-gray-500'}`}>{selected?.symbol}/USD</div>
               </div>
             </div>
             <div className="text-right">
-              <div className="text-2xl font-bold text-gray-900">{formatPrice(selected?.price || 0)}</div>
-              <div className={`text-sm font-semibold ${(selected?.change24h || 0) >= 0 ? 'text-green-600' : 'text-red-500'}`}>
+              <div className={`text-2xl font-bold ${dark ? 'text-gray-100' : 'text-gray-900'}`}>{formatPrice(selected?.price || 0)}</div>
+              <div className={`text-sm font-semibold ${(selected?.change24h || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
                 {(selected?.change24h || 0) >= 0 ? '+' : ''}{(selected?.change24h || 0).toFixed(2)}%
               </div>
             </div>
           </div>
           {selected && <LargeChart data={selected.priceHistory} positive={selected.change24h >= 0} color={coinConfig?.color || '#22c55e'} />}
-          <div className="grid grid-cols-3 gap-4 mt-4 pt-4 border-t border-gray-200">
+          <div className={`grid grid-cols-3 gap-4 mt-4 pt-4 border-t ${dark ? 'border-gray-700' : 'border-gray-200'}`}>
             <div>
-              <div className="text-xs text-gray-500">24h High</div>
-              <div className="text-sm font-semibold text-gray-900">{formatPrice(selected?.high24h || 0)}</div>
+              <div className={`text-xs ${dark ? 'text-gray-500' : 'text-gray-500'}`}>24h High</div>
+              <div className={`text-sm font-semibold ${dark ? 'text-gray-200' : 'text-gray-900'}`}>{formatPrice(selected?.high24h || 0)}</div>
             </div>
             <div>
-              <div className="text-xs text-gray-500">24h Low</div>
-              <div className="text-sm font-semibold text-gray-900">{formatPrice(selected?.low24h || 0)}</div>
+              <div className={`text-xs ${dark ? 'text-gray-500' : 'text-gray-500'}`}>24h Low</div>
+              <div className={`text-sm font-semibold ${dark ? 'text-gray-200' : 'text-gray-900'}`}>{formatPrice(selected?.low24h || 0)}</div>
             </div>
             <div>
-              <div className="text-xs text-gray-500">24h Volume</div>
-              <div className="text-sm font-semibold text-gray-900">{formatVol(selected?.volume24h || 0)}</div>
+              <div className={`text-xs ${dark ? 'text-gray-500' : 'text-gray-500'}`}>24h Volume</div>
+              <div className={`text-sm font-semibold ${dark ? 'text-gray-200' : 'text-gray-900'}`}>{formatVol(selected?.volume24h || 0)}</div>
             </div>
           </div>
         </div>
@@ -277,7 +281,9 @@ export default function CryptoDashboard() {
               className={`rounded-xl p-4 border transition-all text-left ${
                 isSelected
                   ? 'bg-gray-900 text-white border-gray-900 shadow-lg'
-                  : 'bg-white border-gray-200 hover:border-gray-400 hover:shadow-md'
+                  : dark
+                    ? 'bg-[#1a1d27] border-gray-700 hover:border-gray-500'
+                    : 'bg-white border-gray-200 hover:border-gray-400 hover:shadow-md'
               }`}
             >
               <div className="flex items-center justify-between mb-2">
@@ -286,7 +292,7 @@ export default function CryptoDashboard() {
                     style={{ backgroundColor: color }}>
                     {symbol.slice(0, 1)}
                   </div>
-                  <span className={`font-semibold text-sm ${isSelected ? 'text-white' : 'text-gray-900'}`}>{symbol}</span>
+                  <span className={`font-semibold text-sm ${isSelected ? 'text-white' : dark ? 'text-gray-200' : 'text-gray-900'}`}>{symbol}</span>
                 </div>
                 <span className={`text-xs font-semibold ${
                   coin.change24h >= 0
@@ -296,7 +302,7 @@ export default function CryptoDashboard() {
                   {coin.change24h >= 0 ? '+' : ''}{coin.change24h.toFixed(2)}%
                 </span>
               </div>
-              <div className={`text-lg font-bold ${isSelected ? 'text-white' : 'text-gray-900'}`}>
+              <div className={`text-lg font-bold ${isSelected ? 'text-white' : dark ? 'text-gray-100' : 'text-gray-900'}`}>
                 {formatPrice(coin.price)}
               </div>
               <div className="mt-2">
@@ -325,7 +331,7 @@ function FearGreedGauge({ value }: { value: number }) {
           <stop offset="100%" stopColor="#22c55e" />
         </linearGradient>
       </defs>
-      <path d="M 15 80 A 65 65 0 0 1 145 80" fill="none" stroke="#e5e7eb" strokeWidth="12" strokeLinecap="round" />
+      <path d="M 15 80 A 65 65 0 0 1 145 80" fill="none" stroke="#374151" strokeWidth="12" strokeLinecap="round" />
       <path d="M 15 80 A 65 65 0 0 1 145 80" fill="none" stroke="url(#gaugeGrad)" strokeWidth="12" strokeLinecap="round"
         strokeDasharray={`${(value / 100) * 204} 204`} />
       {/* Needle */}
@@ -333,9 +339,9 @@ function FearGreedGauge({ value }: { value: number }) {
         x1="80" y1="80"
         x2={80 + Math.cos((angle * Math.PI) / 180) * 50}
         y2={80 - Math.sin((-angle * Math.PI) / 180) * 50}
-        stroke="#111" strokeWidth="2.5" strokeLinecap="round"
+        stroke="#9ca3af" strokeWidth="2.5" strokeLinecap="round"
       />
-      <circle cx="80" cy="80" r="4" fill="#111" />
+      <circle cx="80" cy="80" r="4" fill="#9ca3af" />
     </svg>
   );
 }

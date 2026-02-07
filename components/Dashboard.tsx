@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import Treemap from './Treemap';
 import CryptoTicker from './CryptoTicker';
 import CryptoDashboard from './CryptoDashboard';
@@ -18,14 +18,14 @@ const TIMEFRAMES: { key: Timeframe; label: string }[] = [
   { key: '1m', label: '1M' },
   { key: '1y', label: '1Y' },
   { key: 'all', label: 'All' },
-  { key: 'oi', label: 'Open Interest' },
+  { key: 'oi', label: 'OI' },
 ];
 
-const TABS: { key: Tab; label: string; icon: string }[] = [
-  { key: 'markets', label: 'Markets', icon: '◧' },
-  { key: 'crypto', label: 'Crypto', icon: '◈' },
-  { key: 'insights', label: 'Insights', icon: '◉' },
-  { key: 'data', label: 'Data', icon: '◫' },
+const TABS: { key: Tab; label: string }[] = [
+  { key: 'markets', label: 'Markets' },
+  { key: 'crypto', label: 'Crypto' },
+  { key: 'insights', label: 'Insights' },
+  { key: 'data', label: 'Data' },
 ];
 
 export default function Dashboard() {
@@ -39,6 +39,19 @@ export default function Dashboard() {
   const [platform, setPlatform] = useState<Platform>('polymarket');
   const [tab, setTab] = useState<Tab>('markets');
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  const [dark, setDark] = useState(false);
+
+  // Load dark mode from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('darkMode');
+    if (saved === 'true') setDark(true);
+  }, []);
+
+  // Apply dark class to root
+  useEffect(() => {
+    document.documentElement.classList.toggle('dark', dark);
+    localStorage.setItem('darkMode', String(dark));
+  }, [dark]);
 
   // Fetch Polymarket data
   useEffect(() => {
@@ -89,8 +102,8 @@ export default function Dashboard() {
     function updateDimensions() {
       const container = document.getElementById('treemap-container');
       if (container) {
-        const width = container.clientWidth || window.innerWidth - 40;
-        const height = Math.max(600, window.innerHeight - 300);
+        const width = container.clientWidth || window.innerWidth - 32;
+        const height = Math.max(500, window.innerHeight - 300);
         setDimensions({ width, height });
       }
     }
@@ -114,13 +127,13 @@ export default function Dashboard() {
     return currentMarkets.reduce((sum, m) => sum + getVolumeForTimeframe(m, timeframe), 0);
   }, [currentMarkets, timeframe]);
 
-  const handleMarketClick = (market: Market) => {
+  const handleMarketClick = useCallback((market: Market) => {
     window.open(market.url, '_blank');
-  };
+  }, []);
 
   if (loading && kalshiLoading) {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50">
+      <div className={`flex items-center justify-center h-screen ${dark ? 'bg-[#0f1117]' : 'bg-gray-50'}`}>
         <div className="text-center">
           <div className="w-12 h-12 border-3 border-gray-300 border-t-gray-600 rounded-full animate-spin mx-auto mb-4" />
           <div className="text-gray-500 text-sm">Loading market data...</div>
@@ -131,75 +144,49 @@ export default function Dashboard() {
 
   if (error && platform === 'polymarket' && tab === 'markets') {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50">
+      <div className={`flex items-center justify-center h-screen ${dark ? 'bg-[#0f1117]' : 'bg-gray-50'}`}>
         <div className="text-center">
           <div className="text-red-500 text-lg mb-2">Error</div>
           <div className="text-gray-500 text-sm mb-4">{error}</div>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-gray-900 text-white text-sm rounded hover:bg-gray-800"
-          >
-            Retry
-          </button>
+          <button onClick={() => window.location.reload()} className="px-4 py-2 bg-gray-900 text-white text-sm rounded hover:bg-gray-800">Retry</button>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Dark header */}
-      <header className="bg-gray-900 text-white">
-        <div className="max-w-[1800px] mx-auto px-4">
-          <div className="flex items-center justify-between py-3">
-            <div className="flex items-center gap-6">
-              <h1 className="text-base font-bold tracking-tight">
-                <span className="text-white">Prediction</span>
-                <span className="text-gray-400">Markets</span>
-              </h1>
-              {/* Tabs */}
-              <nav className="flex items-center gap-1">
-                {TABS.map(t => (
-                  <button
-                    key={t.key}
-                    onClick={() => setTab(t.key)}
-                    className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
-                      tab === t.key
-                        ? 'bg-white/15 text-white'
-                        : 'text-gray-400 hover:text-white hover:bg-white/5'
-                    }`}
-                  >
-                    <span className="mr-1.5">{t.icon}</span>
-                    {t.label}
-                  </button>
-                ))}
-              </nav>
-            </div>
+    <div className={`min-h-screen transition-colors duration-200 ${dark ? 'bg-[#0f1117]' : 'bg-gray-50'}`}>
+      {/* Header */}
+      <header className="bg-gray-900 text-white sticky top-0 z-40">
+        <div className="max-w-[1800px] mx-auto px-3 sm:px-4">
+          {/* Top row: logo + controls */}
+          <div className="flex items-center justify-between py-2.5">
+            <h1 className="text-sm sm:text-base font-bold tracking-tight whitespace-nowrap">
+              <span className="text-white">Prediction</span>
+              <span className="text-gray-400">Markets</span>
+            </h1>
 
-            <div className="flex items-center gap-3">
-              {/* Platform toggle (only on markets tab) */}
+            <div className="flex items-center gap-2 sm:gap-3">
+              {/* Platform toggle (markets tab) */}
               {tab === 'markets' && (
-                <div className="flex items-center gap-1 bg-white/10 rounded-lg p-0.5">
+                <div className="flex items-center gap-0.5 bg-white/10 rounded-lg p-0.5">
                   <button
                     onClick={() => { setPlatform('polymarket'); if (timeframe === 'oi') setTimeframe('24h'); }}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition flex items-center gap-1.5 ${
-                      platform === 'polymarket'
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-400 hover:text-white'
+                    className={`px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium rounded-md transition flex items-center gap-1 ${
+                      platform === 'polymarket' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-white'
                     }`}
                   >
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 inline-block" />
-                    Polymarket
+                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+                    <span className="hidden sm:inline">Polymarket</span>
+                    <span className="sm:hidden">Poly</span>
                   </button>
                   <button
                     onClick={() => { setPlatform('kalshi'); setTimeframe('oi'); }}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition flex items-center gap-1.5 ${
-                      platform === 'kalshi'
-                        ? 'bg-white text-gray-900 shadow-sm'
-                        : 'text-gray-400 hover:text-white'
+                    className={`px-2 sm:px-3 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium rounded-md transition flex items-center gap-1 ${
+                      platform === 'kalshi' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-white'
                     }`}
                   >
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                     Kalshi
                   </button>
                 </div>
@@ -207,15 +194,13 @@ export default function Dashboard() {
 
               {/* Timeframe toggle */}
               {(tab === 'markets' || tab === 'insights' || tab === 'data') && (
-                <div className="flex items-center gap-1 bg-white/10 rounded-lg p-0.5">
+                <div className="flex items-center gap-0.5 bg-white/10 rounded-lg p-0.5">
                   {TIMEFRAMES.map(tf => (
                     <button
                       key={tf.key}
                       onClick={() => setTimeframe(tf.key)}
-                      className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition ${
-                        timeframe === tf.key
-                          ? 'bg-white text-gray-900 shadow-sm'
-                          : 'text-gray-400 hover:text-white'
+                      className={`px-1.5 sm:px-2.5 py-1 sm:py-1.5 text-[10px] sm:text-xs font-medium rounded-md transition ${
+                        timeframe === tf.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-400 hover:text-white'
                       }`}
                     >
                       {tf.label}
@@ -224,21 +209,47 @@ export default function Dashboard() {
                 </div>
               )}
 
-              <div className="text-xs text-gray-500 hidden sm:block">
+              {/* Dark mode toggle */}
+              <button
+                onClick={() => setDark(d => !d)}
+                className="w-8 h-8 flex items-center justify-center rounded-lg bg-white/10 hover:bg-white/20 transition text-sm"
+                title={dark ? 'Light mode' : 'Dark mode'}
+              >
+                {dark ? '☀' : '☾'}
+              </button>
+
+              <span className="text-[10px] text-gray-500 hidden lg:block whitespace-nowrap">
                 Updated {lastUpdated}
-              </div>
+              </span>
             </div>
           </div>
+
+          {/* Tab row */}
+          <nav className="flex items-center gap-1 -mb-px overflow-x-auto scrollbar-none pb-0">
+            {TABS.map(t => (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                className={`px-3 sm:px-4 py-2 text-xs sm:text-sm font-medium whitespace-nowrap border-b-2 transition ${
+                  tab === t.key
+                    ? 'border-white text-white'
+                    : 'border-transparent text-gray-400 hover:text-gray-200 hover:border-gray-600'
+                }`}
+              >
+                {t.label}
+              </button>
+            ))}
+          </nav>
         </div>
       </header>
 
       {/* Main content */}
-      <main className="max-w-[1800px] mx-auto px-4 py-4">
+      <main className="max-w-[1800px] mx-auto px-3 sm:px-4 py-3 sm:py-4">
         {/* Markets Tab */}
         {tab === 'markets' && (
           <>
-            <CryptoTicker />
-            <div id="treemap-container" className="w-full mt-3" style={{ minHeight: '600px' }}>
+            <CryptoTicker dark={dark} />
+            <div id="treemap-container" className="w-full mt-3 overflow-x-auto" style={{ minHeight: '500px' }}>
               {isCurrentLoading ? (
                 <div className="flex items-center justify-center h-96 text-gray-400 text-sm">
                   <div className="text-center">
@@ -247,45 +258,35 @@ export default function Dashboard() {
                   </div>
                 </div>
               ) : dimensions.width > 0 && dimensions.height > 0 ? (
-                <Treemap
-                  data={treemapData}
-                  width={dimensions.width}
-                  height={dimensions.height}
-                  onMarketClick={handleMarketClick}
-                  totalVolume={totalVolume}
-                  timeframeLabel={TIMEFRAMES.find(t => t.key === timeframe)?.label || '24h'}
-                />
-              ) : (
-                <div className="flex items-center justify-center h-96 text-gray-400 text-sm">
-                  Loading treemap...
+                <div style={{ minWidth: '700px' }}>
+                  <Treemap
+                    data={treemapData}
+                    width={Math.max(700, dimensions.width)}
+                    height={dimensions.height}
+                    onMarketClick={handleMarketClick}
+                    totalVolume={totalVolume}
+                    timeframeLabel={TIMEFRAMES.find(t => t.key === timeframe)?.label || '24h'}
+                    dark={dark}
+                  />
                 </div>
+              ) : (
+                <div className="flex items-center justify-center h-96 text-gray-400 text-sm">Loading treemap...</div>
               )}
             </div>
-            <div className="mt-3 text-center text-gray-400 text-xs">
-              Data from {platform === 'polymarket' ? 'Polymarket' : 'Kalshi'} API &middot; Click any market to view
+            <div className={`mt-3 text-center text-xs ${dark ? 'text-gray-600' : 'text-gray-400'}`}>
+              Data from {platform === 'polymarket' ? 'Polymarket' : 'Kalshi'} API · Click any market to view
             </div>
           </>
         )}
 
-        {/* Crypto Tab */}
-        {tab === 'crypto' && <CryptoDashboard />}
+        {tab === 'crypto' && <CryptoDashboard dark={dark} />}
 
-        {/* Insights Tab */}
         {tab === 'insights' && (
-          <Insights
-            polyMarkets={polyMarkets}
-            kalshiMarkets={kalshiMarkets}
-            timeframe={timeframe}
-          />
+          <Insights polyMarkets={polyMarkets} kalshiMarkets={kalshiMarkets} timeframe={timeframe} dark={dark} />
         )}
 
-        {/* Data Tab */}
         {tab === 'data' && (
-          <DataTable
-            polyMarkets={polyMarkets}
-            kalshiMarkets={kalshiMarkets}
-            timeframe={timeframe}
-          />
+          <DataTable polyMarkets={polyMarkets} kalshiMarkets={kalshiMarkets} timeframe={timeframe} dark={dark} />
         )}
       </main>
     </div>

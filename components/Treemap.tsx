@@ -12,6 +12,7 @@ interface TreemapProps {
   onMarketClick?: (market: Market) => void;
   totalVolume: number;
   timeframeLabel?: string;
+  dark?: boolean;
 }
 
 interface TooltipData {
@@ -60,7 +61,41 @@ const CATEGORY_LEAF: Record<string, string> = {
   'Other': '#f2eef8',
 };
 
-export default function Treemap({ data, width, height, onMarketClick, totalVolume, timeframeLabel = '24h' }: TreemapProps) {
+// Dark mode category colors
+const CATEGORY_HEADER_DARK: Record<string, string> = {
+  'Politics': '#2d4a2e',
+  'Sports': '#1e3a52',
+  'Crypto': '#4a2030',
+  'Economics': '#354a1e',
+  'Tech': '#3a2850',
+  'Entertainment': '#4a3818',
+  'World': '#1e403a',
+  'Other': '#302848',
+};
+
+const CATEGORY_FRAME_DARK: Record<string, string> = {
+  'Politics': '#1a2e1c',
+  'Sports': '#14283a',
+  'Crypto': '#341420',
+  'Economics': '#222e14',
+  'Tech': '#261c38',
+  'Entertainment': '#342610',
+  'World': '#142e28',
+  'Other': '#221c34',
+};
+
+const CATEGORY_LEAF_DARK: Record<string, string> = {
+  'Politics': '#1e2a1e',
+  'Sports': '#182430',
+  'Crypto': '#2a1820',
+  'Economics': '#1e2618',
+  'Tech': '#201a2c',
+  'Entertainment': '#2a2014',
+  'World': '#18282a',
+  'Other': '#1e1a28',
+};
+
+export default function Treemap({ data, width, height, onMarketClick, totalVolume, timeframeLabel = '24h', dark = false }: TreemapProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [tooltip, setTooltip] = useState<TooltipData | null>(null);
   const [viewStack, setViewStack] = useState<TreemapData[]>([data]);
@@ -130,9 +165,11 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
       .attr('height', d => Math.max(0, d.y1 - d.y0))
       .attr('fill', d => {
         const cat = getCategoryName(d);
-        return CATEGORY_FRAME[cat] || CATEGORY_FRAME['Other'];
+        return dark
+          ? (CATEGORY_FRAME_DARK[cat] || CATEGORY_FRAME_DARK['Other'])
+          : (CATEGORY_FRAME[cat] || CATEGORY_FRAME['Other']);
       })
-      .attr('stroke', d => d.depth === 1 ? '#222' : '#999')
+      .attr('stroke', d => d.depth === 1 ? (dark ? '#555' : '#222') : (dark ? '#444' : '#999'))
       .attr('stroke-width', d => d.depth === 1 ? 2 : 1)
       .attr('cursor', 'pointer')
       .on('click', (event: MouseEvent, d) => {
@@ -148,7 +185,9 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
       .attr('height', 22)
       .attr('fill', d => {
         const cat = getCategoryName(d);
-        return CATEGORY_HEADER[cat] || CATEGORY_HEADER['Other'];
+        return dark
+          ? (CATEGORY_HEADER_DARK[cat] || CATEGORY_HEADER_DARK['Other'])
+          : (CATEGORY_HEADER[cat] || CATEGORY_HEADER['Other']);
       })
       .attr('pointer-events', 'none');
 
@@ -156,7 +195,7 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
     parentGroups.append('text')
       .attr('x', d => d.x0 + 6)
       .attr('y', d => d.y0 + 16)
-      .attr('fill', '#111')
+      .attr('fill', dark ? '#e5e7eb' : '#111')
       .attr('font-size', d => d.depth === 1 ? '13px' : '11px')
       .attr('font-weight', d => d.depth === 1 ? '700' : '600')
       .attr('pointer-events', 'none')
@@ -178,7 +217,7 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
       .append('text')
       .attr('x', d => d.x1 - 6)
       .attr('y', d => d.y0 + 16)
-      .attr('fill', '#555')
+      .attr('fill', dark ? '#9ca3af' : '#555')
       .attr('font-size', '11px')
       .attr('font-weight', '500')
       .attr('text-anchor', 'end')
@@ -210,13 +249,15 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
       .attr('height', d => Math.max(0, d.y1 - d.y0))
       .attr('fill', d => {
         const cat = getCategoryName(d);
-        return CATEGORY_LEAF[cat] || CATEGORY_LEAF['Other'];
+        return dark
+          ? (CATEGORY_LEAF_DARK[cat] || CATEGORY_LEAF_DARK['Other'])
+          : (CATEGORY_LEAF[cat] || CATEGORY_LEAF['Other']);
       })
-      .attr('stroke', '#bbb')
+      .attr('stroke', dark ? '#555' : '#bbb')
       .attr('stroke-width', 1)
       .attr('cursor', 'pointer')
       .on('mouseenter', function(event: MouseEvent, d) {
-        d3.select(this).attr('stroke', '#000').attr('stroke-width', 2);
+        d3.select(this).attr('stroke', dark ? '#aaa' : '#000').attr('stroke-width', 2);
 
         const percentTotal = totalVolume > 0 ? ((d.value || 0) / totalVolume) * 100 : 0;
         const parentValue = d.parent?.value;
@@ -236,7 +277,7 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
         setTooltip(prev => prev ? { ...prev, x: event.pageX, y: event.pageY } : null);
       })
       .on('mouseleave', function() {
-        d3.select(this).attr('stroke', '#bbb').attr('stroke-width', 1);
+        d3.select(this).attr('stroke', dark ? '#555' : '#bbb').attr('stroke-width', 1);
         setTooltip(null);
       })
       .on('click', (event: MouseEvent, d) => {
@@ -264,7 +305,7 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
       g.append('text')
         .attr('x', d.x0 + 5)
         .attr('y', d.y0 + 15)
-        .attr('fill', '#222')
+        .attr('fill', dark ? '#e5e7eb' : '#222')
         .attr('font-size', '11px')
         .attr('font-weight', '500')
         .attr('pointer-events', 'none')
@@ -274,7 +315,7 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
         g.append('text')
           .attr('x', d.x0 + 5)
           .attr('y', d.y0 + 28)
-          .attr('fill', '#888')
+          .attr('fill', dark ? '#9ca3af' : '#888')
           .attr('font-size', '10px')
           .attr('font-weight', '400')
           .attr('pointer-events', 'none')
@@ -289,15 +330,15 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
       .attr('width', width)
       .attr('height', height)
       .attr('fill', 'none')
-      .attr('stroke', '#222')
+      .attr('stroke', dark ? '#555' : '#222')
       .attr('stroke-width', 2);
 
-  }, [currentView, width, height, onMarketClick, totalVolume, getCategoryName, drillDown]);
+  }, [currentView, width, height, onMarketClick, totalVolume, getCategoryName, drillDown, dark]);
 
   return (
     <div className="relative">
       {/* Breadcrumb header */}
-      <div className="bg-white border-2 border-gray-800 border-b-0 px-4 py-2 flex items-center justify-between">
+      <div className={`border-2 border-b-0 px-4 py-2 flex items-center justify-between ${dark ? 'bg-[#1a1d27] border-gray-600' : 'bg-white border-gray-800'}`}>
         <div className="flex items-center gap-1 text-sm">
           {viewStack.map((view, index) => (
             <span key={index} className="flex items-center">
@@ -306,8 +347,8 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
                 onClick={() => goBack(index)}
                 className={`hover:underline ${
                   index === viewStack.length - 1
-                    ? 'text-gray-900 font-semibold'
-                    : 'text-gray-500 hover:text-gray-700'
+                    ? (dark ? 'text-gray-100 font-semibold' : 'text-gray-900 font-semibold')
+                    : (dark ? 'text-gray-400 hover:text-gray-200' : 'text-gray-500 hover:text-gray-700')
                 }`}
               >
                 {view.name || 'All Markets'}
@@ -315,9 +356,9 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
             </span>
           ))}
         </div>
-        <div className="text-sm text-gray-600">
+        <div className={`text-sm ${dark ? 'text-gray-400' : 'text-gray-600'}`}>
           {timeframeLabel === 'Open Interest' ? 'Open Interest' : `${timeframeLabel} Volume`}{' '}
-          <span className="font-bold text-gray-900">{formatVolume(totalVolume)}</span>
+          <span className={`font-bold ${dark ? 'text-gray-100' : 'text-gray-900'}`}>{formatVolume(totalVolume)}</span>
         </div>
       </div>
 
@@ -326,7 +367,7 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
         ref={svgRef}
         width={width}
         height={height}
-        className="bg-white block"
+        className={`block ${dark ? 'bg-[#141620]' : 'bg-white'}`}
         style={{ fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif" }}
       />
 

@@ -23,7 +23,11 @@ const COINS = [
 
 const MAX_HISTORY = 96; // 24h of 15-min candles
 
-export default function CryptoTicker() {
+interface CryptoTickerProps {
+  dark?: boolean;
+}
+
+export default function CryptoTicker({ dark = false }: CryptoTickerProps) {
   const [prices, setPrices] = useState<Record<string, CryptoPrice>>({});
   const [isLoaded, setIsLoaded] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -160,13 +164,13 @@ export default function CryptoTicker() {
 
   if (!isLoaded) {
     return (
-      <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4">
+      <div className={`rounded-lg p-4 mb-4 border ${dark ? 'bg-[#1a1d27] border-gray-800' : 'bg-white border-gray-200'}`}>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
           {COINS.map(({ id }) => (
-            <div key={id} className="bg-gray-50 rounded-lg p-3 animate-pulse border border-gray-100">
-              <div className="h-4 bg-gray-200 rounded w-12 mb-2" />
-              <div className="h-6 bg-gray-200 rounded w-20 mb-2" />
-              <div className="h-10 bg-gray-100 rounded w-full" />
+            <div key={id} className={`rounded-lg p-3 animate-pulse border ${dark ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-100'}`}>
+              <div className={`h-4 rounded w-12 mb-2 ${dark ? 'bg-gray-700' : 'bg-gray-200'}`} />
+              <div className={`h-6 rounded w-20 mb-2 ${dark ? 'bg-gray-700' : 'bg-gray-200'}`} />
+              <div className={`h-10 rounded w-full ${dark ? 'bg-gray-700' : 'bg-gray-100'}`} />
             </div>
           ))}
         </div>
@@ -175,7 +179,7 @@ export default function CryptoTicker() {
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4">
+    <div className={`rounded-lg p-4 mb-4 border ${dark ? 'bg-[#1a1d27] border-gray-800' : 'bg-white border-gray-200'}`}>
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
         {COINS.map(({ id, symbol }) => {
           const coin = prices[id];
@@ -187,20 +191,20 @@ export default function CryptoTicker() {
           return (
             <div
               key={id}
-              className={`bg-gray-50 rounded-lg p-3 border transition-all duration-150 ${
-                priceUp ? 'border-green-300 bg-green-50/50' :
-                priceDown ? 'border-red-300 bg-red-50/50' :
-                'border-gray-100'
+              className={`rounded-lg p-3 border transition-all duration-150 ${
+                priceUp ? (dark ? 'border-green-700 bg-green-900/30' : 'border-green-300 bg-green-50/50') :
+                priceDown ? (dark ? 'border-red-700 bg-red-900/30' : 'border-red-300 bg-red-50/50') :
+                (dark ? 'border-gray-700 bg-gray-800' : 'border-gray-100 bg-gray-50')
               }`}
             >
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center gap-2">
                   <CryptoIcon symbol={symbol} />
-                  <span className="font-medium text-gray-900 text-sm">{symbol}</span>
+                  <span className={`font-medium text-sm ${dark ? 'text-gray-200' : 'text-gray-900'}`}>{symbol}</span>
                 </div>
                 <span
                   className={`text-xs font-medium ${
-                    coin.change24h >= 0 ? 'text-green-600' : 'text-red-500'
+                    coin.change24h >= 0 ? 'text-green-500' : 'text-red-500'
                   }`}
                 >
                   {coin.change24h >= 0 ? '+' : ''}
@@ -210,7 +214,7 @@ export default function CryptoTicker() {
 
               <div
                 className={`text-lg font-semibold mb-2 transition-colors duration-150 ${
-                  priceUp ? 'text-green-600' : priceDown ? 'text-red-500' : 'text-gray-900'
+                  priceUp ? 'text-green-500' : priceDown ? 'text-red-500' : (dark ? 'text-gray-100' : 'text-gray-900')
                 }`}
               >
                 {formatPrice(coin.price)}
