@@ -41,10 +41,16 @@ export default function Dashboard() {
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [dark, setDark] = useState(false);
 
-  // Load dark mode from localStorage
+  // Load dark mode from localStorage or detect system preference
   useEffect(() => {
     const saved = localStorage.getItem('darkMode');
-    if (saved === 'true') setDark(true);
+    if (saved !== null) {
+      setDark(saved === 'true');
+    } else {
+      // No saved preference — detect system dark mode
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      setDark(prefersDark);
+    }
   }, []);
 
   // Apply dark class to root

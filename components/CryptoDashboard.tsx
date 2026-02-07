@@ -1,17 +1,23 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 
-interface CoinData {
+interface Candle {
+  time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+}
+
+interface CoinSummary {
   id: string;
   symbol: string;
   name: string;
   price: number;
   change24h: number;
-  high24h: number;
-  low24h: number;
-  volume24h: number;
-  priceHistory: number[];
+  color: string;
 }
 
 interface FearGreed {
@@ -19,93 +25,97 @@ interface FearGreed {
   classification: string;
 }
 
+interface CrosshairData {
+  candle: Candle;
+  x: number;
+  y: number;
+}
+
 const COINS = [
   { id: 'bitcoin', symbol: 'BTC', name: 'Bitcoin', pair: 'XBTUSD', resultKey: 'XXBTZUSD', color: '#F7931A' },
   { id: 'ethereum', symbol: 'ETH', name: 'Ethereum', pair: 'ETHUSD', resultKey: 'XETHZUSD', color: '#627EEA' },
-  { id: 'solana', symbol: 'SOL', name: 'Solana', pair: 'SOLUSD', resultKey: 'SOLUSD', color: '#00FFA3' },
+  { id: 'solana', symbol: 'SOL', name: 'Solana', pair: 'SOLUSD', resultKey: 'SOLUSD', color: '#9945FF' },
   { id: 'dogecoin', symbol: 'DOGE', name: 'Dogecoin', pair: 'DOGEUSD', resultKey: 'XDGUSD', color: '#C2A633' },
-  { id: 'xrp', symbol: 'XRP', name: 'XRP', pair: 'XRPUSD', resultKey: 'XXRPZUSD', color: '#23292F' },
+  { id: 'xrp', symbol: 'XRP', name: 'XRP', pair: 'XRPUSD', resultKey: 'XXRPZUSD', color: '#00AAE4' },
   { id: 'cardano', symbol: 'ADA', name: 'Cardano', pair: 'ADAUSD', resultKey: 'ADAUSD', color: '#0033AD' },
   { id: 'avalanche', symbol: 'AVAX', name: 'Avalanche', pair: 'AVAXUSD', resultKey: 'AVAXUSD', color: '#E84142' },
   { id: 'chainlink', symbol: 'LINK', name: 'Chainlink', pair: 'LINKUSD', resultKey: 'LINKUSD', color: '#2A5ADA' },
 ];
+
+type ChartInterval = '15m' | '1h' | '4h' | '1d' | '1w';
+
+const INTERVALS: { key: ChartInterval; label: string; krakenInterval: number; sinceDelta: number }[] = [
+  { key: '15m', label: '15m', krakenInterval: 15, sinceDelta: 24 * 60 * 60 },
+  { key: '1h', label: '1H', krakenInterval: 60, sinceDelta: 7 * 24 * 60 * 60 },
+  { key: '4h', label: '4H', krakenInterval: 240, sinceDelta: 30 * 24 * 60 * 60 },
+  { key: '1d', label: '1D', krakenInterval: 1440, sinceDelta: 365 * 24 * 60 * 60 },
+  { key: '1w', label: '1W', krakenInterval: 10080, sinceDelta: 3 * 365 * 24 * 60 * 60 },
+];
+
+type ChartType = 'candle' | 'line';
 
 interface CryptoDashboardProps {
   dark?: boolean;
 }
 
 export default function CryptoDashboard({ dark = false }: CryptoDashboardProps) {
-  const [coins, setCoins] = useState<Record<string, CoinData>>({});
-  const [fearGreed, setFearGreed] = useState<FearGreed | null>(null);
   const [selectedCoin, setSelectedCoin] = useState<string>('bitcoin');
-  const [isLoaded, setIsLoaded] = useState(false);
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [interval, setInterval_] = useState<ChartInterval>('1h');
+  const [chartType, setChartType] = useState<ChartType>('candle');
+  const [candles, setCandles] = useState<Candle[]>([]);
+  const [chartLoading, setChartLoading] = useState(true);
+  const [coinSummaries, setCoinSummaries] = useState<Record<string, CoinSummary>>({});
+  const [fearGreed, setFearGreed] = useState<FearGreed | null>(null);
+  const [crosshair, setCrosshair] = useState<CrosshairData | null>(null);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Fetch 24h OHLC history
+  const coinConfig = COINS.find(c => c.id === selectedCoin)!;
+  const intervalConfig = INTERVALS.find(i => i.key === interval)!;
+
+  // Fetch OHLC candles for selected coin + interval
   useEffect(() => {
-    async function fetchHistory() {
-      const since = Math.floor(Date.now() / 1000) - 24 * 60 * 60;
+    let cancelled = false;
 
-      const results = await Promise.allSettled(
-        COINS.map(async (coin) => {
-          const res = await fetch(
-            `https://api.kraken.com/0/public/OHLC?pair=${coin.pair}&interval=15&since=${since}`,
-            { cache: 'no-store' }
-          );
-          if (!res.ok) return null;
-          const data = await res.json();
-          if (data.error?.length > 0) return null;
+    async function fetchCandles() {
+      setChartLoading(true);
+      try {
+        const since = Math.floor(Date.now() / 1000) - intervalConfig.sinceDelta;
+        const res = await fetch(
+          `https://api.kraken.com/0/public/OHLC?pair=${coinConfig.pair}&interval=${intervalConfig.krakenInterval}&since=${since}`,
+          { cache: 'no-store' }
+        );
+        if (!res.ok || cancelled) return;
+        const data = await res.json();
+        if (data.error?.length > 0) return;
 
-          const pairKey = Object.keys(data.result).find(k => k !== 'last');
-          if (!pairKey) return null;
+        const pairKey = Object.keys(data.result).find(k => k !== 'last');
+        if (!pairKey) return;
 
-          const candles = data.result[pairKey] as number[][];
-          const closePrices = candles.map((c: number[]) => parseFloat(String(c[4])));
-          const highs = candles.map((c: number[]) => parseFloat(String(c[2])));
-          const lows = candles.map((c: number[]) => parseFloat(String(c[3])));
-          const volumes = candles.map((c: number[]) => parseFloat(String(c[6])));
+        const raw = data.result[pairKey] as number[][];
+        const parsed: Candle[] = raw.map((c: number[]) => ({
+          time: Number(c[0]),
+          open: parseFloat(String(c[1])),
+          high: parseFloat(String(c[2])),
+          low: parseFloat(String(c[3])),
+          close: parseFloat(String(c[4])),
+          volume: parseFloat(String(c[6])),
+        }));
 
-          return {
-            coinId: coin.id,
-            symbol: coin.symbol,
-            name: coin.name,
-            color: coin.color,
-            history: closePrices,
-            high24h: Math.max(...highs),
-            low24h: Math.min(...lows),
-            volume24h: volumes.reduce((s, v) => s + v, 0),
-          };
-        })
-      );
-
-      const initial: Record<string, CoinData> = {};
-      for (const result of results) {
-        if (result.status === 'fulfilled' && result.value) {
-          const { coinId, symbol, name, history, high24h, low24h, volume24h } = result.value;
-          const lastPrice = history[history.length - 1] || 0;
-          const firstPrice = history[0] || lastPrice;
-          const change24h = firstPrice > 0 ? ((lastPrice - firstPrice) / firstPrice) * 100 : 0;
-
-          initial[coinId] = {
-            id: coinId, symbol, name, price: lastPrice,
-            change24h, high24h, low24h, volume24h,
-            priceHistory: history.slice(-96),
-          };
-        }
-      }
-
-      if (Object.keys(initial).length > 0) {
-        setCoins(initial);
-        setIsLoaded(true);
+        if (!cancelled) setCandles(parsed);
+      } catch (err) {
+        console.error('OHLC fetch error:', err);
+      } finally {
+        if (!cancelled) setChartLoading(false);
       }
     }
 
-    fetchHistory();
-  }, []);
+    fetchCandles();
+    return () => { cancelled = true; };
+  }, [selectedCoin, interval, coinConfig.pair, intervalConfig.krakenInterval, intervalConfig.sinceDelta]);
 
-  // Live price polling
+  // Fetch ticker summaries for all coins (live polling)
   useEffect(() => {
-    async function fetchPrices() {
+    async function fetchTickers() {
       try {
         const pairs = COINS.map(c => c.pair).join(',');
         const res = await fetch(
@@ -116,291 +126,632 @@ export default function CryptoDashboard({ dark = false }: CryptoDashboardProps) 
         const data = await res.json();
         if (data.error?.length > 0) return;
 
-        setCoins(prev => {
-          const updated: Record<string, CoinData> = {};
-          for (const coin of COINS) {
-            const tickerData = data.result?.[coin.resultKey];
-            if (tickerData) {
-              const price = parseFloat(tickerData.c?.[0]) || 0;
-              const open = parseFloat(tickerData.o) || price;
-              const change24h = open > 0 ? ((price - open) / open) * 100 : 0;
-              const prevData = prev[coin.id];
-              const prevHistory = prevData?.priceHistory || [];
-              const newHistory = price !== prevHistory[prevHistory.length - 1]
-                ? [...prevHistory, price].slice(-96)
-                : prevHistory.length > 0 ? prevHistory : [price];
-
-              updated[coin.id] = {
-                id: coin.id, symbol: coin.symbol, name: coin.name,
-                price, change24h,
-                high24h: prevData?.high24h || parseFloat(tickerData.h?.[1]) || price,
-                low24h: prevData?.low24h || parseFloat(tickerData.l?.[1]) || price,
-                volume24h: prevData?.volume24h || parseFloat(tickerData.v?.[1]) || 0,
-                priceHistory: newHistory,
-              };
-            } else if (prev[coin.id]) {
-              updated[coin.id] = prev[coin.id];
-            }
+        const summaries: Record<string, CoinSummary> = {};
+        for (const coin of COINS) {
+          const td = data.result?.[coin.resultKey];
+          if (td) {
+            const price = parseFloat(td.c?.[0]) || 0;
+            const open = parseFloat(td.o) || price;
+            const change24h = open > 0 ? ((price - open) / open) * 100 : 0;
+            summaries[coin.id] = {
+              id: coin.id, symbol: coin.symbol, name: coin.name,
+              price, change24h, color: coin.color,
+            };
           }
-          return updated;
-        });
-        setIsLoaded(true);
+        }
+        setCoinSummaries(summaries);
       } catch (err) {
-        console.error('Kraken error:', err);
+        console.error('Ticker error:', err);
       }
     }
 
-    const delay = setTimeout(() => {
-      fetchPrices();
-      intervalRef.current = setInterval(fetchPrices, 2000);
-    }, 2000);
-
+    fetchTickers();
+    pollingRef.current = globalThis.setInterval(fetchTickers, 3000);
     return () => {
-      clearTimeout(delay);
-      if (intervalRef.current) clearInterval(intervalRef.current);
+      if (pollingRef.current) globalThis.clearInterval(pollingRef.current);
     };
   }, []);
 
-  // Fear & Greed Index
+  // Fear & Greed
   useEffect(() => {
-    async function fetchFearGreed() {
+    async function fetchFG() {
       try {
         const res = await fetch('https://api.alternative.me/fng/?limit=1', { cache: 'no-store' });
         if (!res.ok) return;
         const data = await res.json();
         const item = data.data?.[0];
-        if (item) {
-          setFearGreed({ value: parseInt(item.value), classification: item.value_classification });
-        }
-      } catch (err) {
-        console.error('Fear & Greed error:', err);
-      }
+        if (item) setFearGreed({ value: parseInt(item.value), classification: item.value_classification });
+      } catch {}
     }
-    fetchFearGreed();
+    fetchFG();
   }, []);
 
+  const currentSummary = coinSummaries[selectedCoin];
+  const currentPrice = currentSummary?.price || (candles.length > 0 ? candles[candles.length - 1].close : 0);
+  const currentChange = currentSummary?.change24h || 0;
+
+  // Chart stats
+  const stats = useMemo(() => {
+    if (candles.length === 0) return null;
+    const highs = candles.map(c => c.high);
+    const lows = candles.map(c => c.low);
+    const totalVol = candles.reduce((s, c) => s + c.volume, 0);
+    return {
+      high: Math.max(...highs),
+      low: Math.min(...lows),
+      open: candles[0].open,
+      volume: totalVol,
+    };
+  }, [candles]);
+
   const formatPrice = (price: number): string => {
-    if (price >= 1000) return `$${price.toLocaleString('en-US', { maximumFractionDigits: 0 })}`;
+    if (price >= 1000) return `$${price.toLocaleString('en-US', { maximumFractionDigits: 2 })}`;
     if (price >= 1) return `$${price.toFixed(2)}`;
     if (price >= 0.01) return `$${price.toFixed(4)}`;
     return `$${price.toFixed(6)}`;
   };
 
   const formatVol = (v: number): string => {
-    if (v >= 1e9) return `$${(v / 1e9).toFixed(1)}B`;
-    if (v >= 1e6) return `$${(v / 1e6).toFixed(1)}M`;
-    if (v >= 1e3) return `$${(v / 1e3).toFixed(0)}K`;
-    return `$${v.toFixed(0)}`;
+    if (v >= 1e9) return `${(v / 1e9).toFixed(2)}B`;
+    if (v >= 1e6) return `${(v / 1e6).toFixed(2)}M`;
+    if (v >= 1e3) return `${(v / 1e3).toFixed(1)}K`;
+    return v.toFixed(1);
   };
 
-  if (!isLoaded) {
-    return (
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 animate-pulse">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className={`rounded-xl p-5 border h-40 ${dark ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-100'}`} />
-        ))}
-      </div>
-    );
-  }
+  const formatTime = (ts: number): string => {
+    const d = new Date(ts * 1000);
+    if (interval === '1d' || interval === '1w') {
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
+    }
+    return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
 
-  const selected = coins[selectedCoin];
-  const coinConfig = COINS.find(c => c.id === selectedCoin);
+  const bg = dark ? 'bg-[#0f1117]' : 'bg-gray-50';
+  const cardBg = dark ? 'bg-[#181b25]' : 'bg-white';
+  const border = dark ? 'border-[#2a2d3a]' : 'border-gray-200';
+  const textPrimary = dark ? 'text-gray-100' : 'text-gray-900';
+  const textSecondary = dark ? 'text-gray-400' : 'text-gray-500';
+  const textMuted = dark ? 'text-gray-500' : 'text-gray-400';
 
   return (
-    <div className="space-y-4">
-      {/* Top row: Fear & Greed + Featured coin chart */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Fear & Greed Gauge */}
-        <div className={`rounded-xl border p-5 flex flex-col items-center justify-center ${dark ? 'bg-[#1a1d27] border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
-          <div className={`text-xs uppercase tracking-wider mb-3 ${dark ? 'text-gray-400' : 'text-gray-500'}`}>Fear & Greed Index</div>
-          {fearGreed ? (
-            <>
-              <FearGreedGauge value={fearGreed.value} />
-              <div className="text-3xl font-bold mt-3" style={{
-                color: fearGreed.value <= 25 ? '#ef4444' : fearGreed.value <= 45 ? '#f59e0b' :
-                  fearGreed.value <= 55 ? '#6b7280' : fearGreed.value <= 75 ? '#84cc16' : '#22c55e'
-              }}>
-                {fearGreed.value}
-              </div>
-              <div className={`text-sm font-medium ${dark ? 'text-gray-400' : 'text-gray-600'}`}>{fearGreed.classification}</div>
-            </>
-          ) : (
-            <div className="text-gray-400 text-sm">Loading...</div>
-          )}
-        </div>
-
-        {/* Featured coin large chart */}
-        <div className={`lg:col-span-2 rounded-xl border p-5 ${dark ? 'bg-[#1a1d27] border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-bold"
-                style={{ backgroundColor: coinConfig?.color || '#666' }}>
-                {selected?.symbol?.slice(0, 2)}
-              </div>
-              <div>
-                <div className={`text-lg font-bold ${dark ? 'text-gray-100' : 'text-gray-900'}`}>{selected?.name}</div>
-                <div className={`text-xs ${dark ? 'text-gray-500' : 'text-gray-500'}`}>{selected?.symbol}/USD</div>
-              </div>
-            </div>
-            <div className="text-right">
-              <div className={`text-2xl font-bold ${dark ? 'text-gray-100' : 'text-gray-900'}`}>{formatPrice(selected?.price || 0)}</div>
-              <div className={`text-sm font-semibold ${(selected?.change24h || 0) >= 0 ? 'text-green-500' : 'text-red-500'}`}>
-                {(selected?.change24h || 0) >= 0 ? '+' : ''}{(selected?.change24h || 0).toFixed(2)}%
-              </div>
-            </div>
-          </div>
-          {selected && <LargeChart data={selected.priceHistory} positive={selected.change24h >= 0} color={coinConfig?.color || '#22c55e'} />}
-          <div className={`grid grid-cols-3 gap-4 mt-4 pt-4 border-t ${dark ? 'border-gray-700' : 'border-gray-200'}`}>
-            <div>
-              <div className={`text-xs ${dark ? 'text-gray-500' : 'text-gray-500'}`}>24h High</div>
-              <div className={`text-sm font-semibold ${dark ? 'text-gray-200' : 'text-gray-900'}`}>{formatPrice(selected?.high24h || 0)}</div>
-            </div>
-            <div>
-              <div className={`text-xs ${dark ? 'text-gray-500' : 'text-gray-500'}`}>24h Low</div>
-              <div className={`text-sm font-semibold ${dark ? 'text-gray-200' : 'text-gray-900'}`}>{formatPrice(selected?.low24h || 0)}</div>
-            </div>
-            <div>
-              <div className={`text-xs ${dark ? 'text-gray-500' : 'text-gray-500'}`}>24h Volume</div>
-              <div className={`text-sm font-semibold ${dark ? 'text-gray-200' : 'text-gray-900'}`}>{formatVol(selected?.volume24h || 0)}</div>
-            </div>
-          </div>
+    <div className="space-y-3">
+      {/* Coin selector strip */}
+      <div className={`${cardBg} border ${border} rounded-xl p-2 overflow-x-auto scrollbar-none`}>
+        <div className="flex items-center gap-1.5 min-w-max">
+          {COINS.map(coin => {
+            const summary = coinSummaries[coin.id];
+            const isSelected = coin.id === selectedCoin;
+            return (
+              <button
+                key={coin.id}
+                onClick={() => setSelectedCoin(coin.id)}
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-all whitespace-nowrap ${
+                  isSelected
+                    ? (dark ? 'bg-[#2a2d3a] text-white' : 'bg-gray-900 text-white')
+                    : (dark ? 'hover:bg-[#1e2130] text-gray-300' : 'hover:bg-gray-100 text-gray-700')
+                }`}
+              >
+                <div
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white flex-shrink-0"
+                  style={{ backgroundColor: coin.color }}
+                >
+                  {coin.symbol.slice(0, 1)}
+                </div>
+                <span className="font-semibold">{coin.symbol}</span>
+                {summary && (
+                  <>
+                    <span className={isSelected ? 'text-gray-300' : textSecondary}>
+                      {formatPrice(summary.price)}
+                    </span>
+                    <span className={`text-xs font-medium ${summary.change24h >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                      {summary.change24h >= 0 ? '+' : ''}{summary.change24h.toFixed(2)}%
+                    </span>
+                  </>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Coin grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-4 gap-3">
-        {COINS.map(({ id, symbol, name, color }) => {
-          const coin = coins[id];
-          if (!coin) return null;
-          const isSelected = id === selectedCoin;
+      {/* Main chart area */}
+      <div className={`${cardBg} border ${border} rounded-xl overflow-hidden`}>
+        {/* Chart toolbar */}
+        <div className={`flex items-center justify-between px-4 py-3 border-b ${border}`}>
+          <div className="flex items-center gap-4">
+            {/* Coin info */}
+            <div className="flex items-center gap-2.5">
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                style={{ backgroundColor: coinConfig.color }}
+              >
+                {coinConfig.symbol.slice(0, 2)}
+              </div>
+              <div>
+                <div className={`text-sm font-bold ${textPrimary}`}>{coinConfig.name}</div>
+                <div className={`text-[11px] ${textMuted}`}>{coinConfig.symbol}/USD</div>
+              </div>
+            </div>
+
+            {/* Price */}
+            <div className="pl-4 border-l border-current/10">
+              <div className={`text-xl font-bold tabular-nums ${textPrimary}`}>
+                {formatPrice(currentPrice)}
+              </div>
+              <div className={`text-xs font-semibold ${currentChange >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                {currentChange >= 0 ? '+' : ''}{currentChange.toFixed(2)}%
+              </div>
+            </div>
+
+            {/* OHLCV stats from crosshair or latest */}
+            {stats && (
+              <div className={`hidden lg:flex items-center gap-4 pl-4 border-l border-current/10 text-[11px] ${textSecondary}`}>
+                <div>
+                  <span className={textMuted}>O </span>
+                  <span className={textPrimary}>{formatPrice(crosshair?.candle.open ?? candles[candles.length - 1]?.open ?? 0)}</span>
+                </div>
+                <div>
+                  <span className={textMuted}>H </span>
+                  <span className="text-green-500">{formatPrice(crosshair?.candle.high ?? candles[candles.length - 1]?.high ?? 0)}</span>
+                </div>
+                <div>
+                  <span className={textMuted}>L </span>
+                  <span className="text-red-500">{formatPrice(crosshair?.candle.low ?? candles[candles.length - 1]?.low ?? 0)}</span>
+                </div>
+                <div>
+                  <span className={textMuted}>C </span>
+                  <span className={textPrimary}>{formatPrice(crosshair?.candle.close ?? candles[candles.length - 1]?.close ?? 0)}</span>
+                </div>
+                <div>
+                  <span className={textMuted}>Vol </span>
+                  <span className={textPrimary}>{formatVol(crosshair?.candle.volume ?? candles[candles.length - 1]?.volume ?? 0)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Chart type toggle */}
+            <div className={`flex items-center gap-0.5 rounded-lg p-0.5 ${dark ? 'bg-[#12141e]' : 'bg-gray-100'}`}>
+              <button
+                onClick={() => setChartType('candle')}
+                className={`px-2 py-1 text-[11px] font-medium rounded-md transition ${
+                  chartType === 'candle'
+                    ? (dark ? 'bg-[#2a2d3a] text-white' : 'bg-white text-gray-900 shadow-sm')
+                    : (dark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-700')
+                }`}
+                title="Candlestick"
+              >
+                {/* candle icon */}
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+                  <rect x="3" y="2" width="2" height="12" rx="0.5" />
+                  <rect x="3.75" y="0" width="0.5" height="2" />
+                  <rect x="3.75" y="14" width="0.5" height="2" />
+                  <rect x="7" y="5" width="2" height="8" rx="0.5" />
+                  <rect x="7.75" y="3" width="0.5" height="2" />
+                  <rect x="7.75" y="13" width="0.5" height="2" />
+                  <rect x="11" y="1" width="2" height="10" rx="0.5" />
+                  <rect x="11.75" y="0" width="0.5" height="1" />
+                  <rect x="11.75" y="11" width="0.5" height="3" />
+                </svg>
+              </button>
+              <button
+                onClick={() => setChartType('line')}
+                className={`px-2 py-1 text-[11px] font-medium rounded-md transition ${
+                  chartType === 'line'
+                    ? (dark ? 'bg-[#2a2d3a] text-white' : 'bg-white text-gray-900 shadow-sm')
+                    : (dark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-700')
+                }`}
+                title="Line"
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <polyline points="1,12 5,6 9,9 15,2" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Interval selector */}
+            <div className={`flex items-center gap-0.5 rounded-lg p-0.5 ${dark ? 'bg-[#12141e]' : 'bg-gray-100'}`}>
+              {INTERVALS.map(iv => (
+                <button
+                  key={iv.key}
+                  onClick={() => setInterval_(iv.key)}
+                  className={`px-2 py-1 text-[11px] font-medium rounded-md transition ${
+                    interval === iv.key
+                      ? (dark ? 'bg-[#2a2d3a] text-white' : 'bg-white text-gray-900 shadow-sm')
+                      : (dark ? 'text-gray-500 hover:text-gray-300' : 'text-gray-400 hover:text-gray-700')
+                  }`}
+                >
+                  {iv.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Chart */}
+        <div className="relative" style={{ height: 480 }}>
+          {chartLoading ? (
+            <div className="flex items-center justify-center h-full">
+              <div className={`w-6 h-6 border-2 rounded-full animate-spin ${dark ? 'border-gray-700 border-t-gray-400' : 'border-gray-200 border-t-gray-600'}`} />
+            </div>
+          ) : (
+            <InteractiveChart
+              candles={candles}
+              dark={dark}
+              chartType={chartType}
+              coinColor={coinConfig.color}
+              onCrosshairChange={setCrosshair}
+              formatPrice={formatPrice}
+              formatTime={formatTime}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Bottom row: stats + Fear & Greed */}
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
+        {/* Stats cards */}
+        {stats && (
+          <>
+            <StatCard label="Period High" value={formatPrice(stats.high)} dark={dark} color="text-green-500" />
+            <StatCard label="Period Low" value={formatPrice(stats.low)} dark={dark} color="text-red-500" />
+            <StatCard label="Period Open" value={formatPrice(stats.open)} dark={dark} />
+            <StatCard label="Total Volume" value={formatVol(stats.volume)} dark={dark} />
+          </>
+        )}
+      </div>
+
+      {/* Coin grid with mini charts */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {COINS.map(coin => {
+          const summary = coinSummaries[coin.id];
+          if (!summary) return (
+            <div key={coin.id} className={`${cardBg} border ${border} rounded-xl p-4 animate-pulse h-20`} />
+          );
+          const isSelected = coin.id === selectedCoin;
 
           return (
             <button
-              key={id}
-              onClick={() => setSelectedCoin(id)}
-              className={`rounded-xl p-4 border transition-all text-left ${
+              key={coin.id}
+              onClick={() => setSelectedCoin(coin.id)}
+              className={`rounded-xl p-3 border transition-all text-left ${
                 isSelected
-                  ? 'bg-gray-900 text-white border-gray-900 shadow-lg'
-                  : dark
-                    ? 'bg-[#1a1d27] border-gray-700 hover:border-gray-500'
-                    : 'bg-white border-gray-200 hover:border-gray-400 hover:shadow-md'
+                  ? (dark ? 'bg-[#2a2d3a] border-[#3a3d4a] ring-1 ring-blue-500/30' : 'bg-gray-900 text-white border-gray-900')
+                  : `${cardBg} ${border} ${dark ? 'hover:border-gray-600' : 'hover:border-gray-400'}`
               }`}
             >
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-[9px] font-bold text-white"
-                    style={{ backgroundColor: color }}>
-                    {symbol.slice(0, 1)}
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-1.5">
+                  <div
+                    className="w-5 h-5 rounded-full flex items-center justify-center text-[8px] font-bold text-white"
+                    style={{ backgroundColor: coin.color }}
+                  >
+                    {coin.symbol.slice(0, 1)}
                   </div>
-                  <span className={`font-semibold text-sm ${isSelected ? 'text-white' : dark ? 'text-gray-200' : 'text-gray-900'}`}>{symbol}</span>
+                  <span className={`font-semibold text-xs ${isSelected ? 'text-white' : textPrimary}`}>{coin.symbol}</span>
                 </div>
-                <span className={`text-xs font-semibold ${
-                  coin.change24h >= 0
-                    ? isSelected ? 'text-green-400' : 'text-green-600'
-                    : isSelected ? 'text-red-400' : 'text-red-500'
-                }`}>
-                  {coin.change24h >= 0 ? '+' : ''}{coin.change24h.toFixed(2)}%
+                <span className={`text-[10px] font-semibold ${summary.change24h >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+                  {summary.change24h >= 0 ? '+' : ''}{summary.change24h.toFixed(2)}%
                 </span>
               </div>
-              <div className={`text-lg font-bold ${isSelected ? 'text-white' : dark ? 'text-gray-100' : 'text-gray-900'}`}>
-                {formatPrice(coin.price)}
-              </div>
-              <div className="mt-2">
-                <MiniChart data={coin.priceHistory} positive={coin.change24h >= 0} light={isSelected} />
+              <div className={`text-sm font-bold tabular-nums ${isSelected ? 'text-white' : textPrimary}`}>
+                {formatPrice(summary.price)}
               </div>
             </button>
           );
         })}
       </div>
+
+      {/* Fear & Greed strip */}
+      {fearGreed && (
+        <div className={`${cardBg} border ${border} rounded-xl px-4 py-3 flex items-center justify-between`}>
+          <div className="flex items-center gap-3">
+            <div className={`text-xs font-medium uppercase tracking-wider ${textMuted}`}>Fear & Greed Index</div>
+            <FearGreedBar value={fearGreed.value} dark={dark} />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-lg font-bold" style={{
+              color: fearGreed.value <= 25 ? '#ef4444' : fearGreed.value <= 45 ? '#f59e0b' :
+                fearGreed.value <= 55 ? '#6b7280' : fearGreed.value <= 75 ? '#84cc16' : '#22c55e'
+            }}>
+              {fearGreed.value}
+            </span>
+            <span className={`text-xs font-medium ${textSecondary}`}>{fearGreed.classification}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function FearGreedGauge({ value }: { value: number }) {
-  const angle = (value / 100) * 180 - 90; // -90 to 90 degrees
+// --- Interactive Chart Component ---
+function InteractiveChart({
+  candles, dark, chartType, coinColor, onCrosshairChange, formatPrice, formatTime,
+}: {
+  candles: Candle[];
+  dark: boolean;
+  chartType: ChartType;
+  coinColor: string;
+  onCrosshairChange: (data: CrosshairData | null) => void;
+  formatPrice: (p: number) => string;
+  formatTime: (ts: number) => string;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [dims, setDims] = useState({ w: 0, h: 0 });
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const obs = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect;
+      setDims({ w: width, h: height });
+    });
+    obs.observe(containerRef.current);
+    return () => obs.disconnect();
+  }, []);
+
+  const margin = { top: 10, right: 70, bottom: 30, left: 10 };
+  const chartW = dims.w - margin.left - margin.right;
+  const chartH = dims.h - margin.top - margin.bottom;
+  const volH = chartH * 0.15; // bottom 15% for volume
+
+  const { priceMin, priceMax, volMax, candleWidth } = useMemo(() => {
+    if (candles.length === 0) return { priceMin: 0, priceMax: 1, volMax: 1, candleWidth: 4 };
+    const prices = candles.flatMap(c => [c.high, c.low]);
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    const pad = (max - min) * 0.05;
+    const vMax = Math.max(...candles.map(c => c.volume));
+    const cw = Math.max(1, Math.min(12, (chartW / candles.length) * 0.7));
+    return { priceMin: min - pad, priceMax: max + pad, volMax: vMax, candleWidth: cw };
+  }, [candles, chartW]);
+
+  const xScale = useCallback((i: number) => margin.left + (i / Math.max(1, candles.length - 1)) * chartW, [margin.left, candles.length, chartW]);
+  const yScale = useCallback((price: number) => margin.top + (1 - (price - priceMin) / (priceMax - priceMin)) * (chartH - volH), [margin.top, priceMin, priceMax, chartH, volH]);
+  const volScale = useCallback((vol: number) => (vol / volMax) * volH, [volMax, volH]);
+
+  // Find nearest candle to mouse
+  const hoveredIdx = useMemo(() => {
+    if (!mousePos || candles.length === 0 || chartW <= 0) return -1;
+    const mx = mousePos.x - margin.left;
+    const idx = Math.round((mx / chartW) * (candles.length - 1));
+    return Math.max(0, Math.min(candles.length - 1, idx));
+  }, [mousePos, candles.length, chartW, margin.left]);
+
+  useEffect(() => {
+    if (hoveredIdx >= 0 && candles[hoveredIdx]) {
+      onCrosshairChange({
+        candle: candles[hoveredIdx],
+        x: xScale(hoveredIdx),
+        y: yScale(candles[hoveredIdx].close),
+      });
+    } else {
+      onCrosshairChange(null);
+    }
+  }, [hoveredIdx, candles, xScale, yScale, onCrosshairChange]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    setMousePos(null);
+    onCrosshairChange(null);
+  }, [onCrosshairChange]);
+
+  if (candles.length === 0 || dims.w === 0) {
+    return <div ref={containerRef} className="w-full h-full" />;
+  }
+
+  const gridColor = dark ? '#1e2030' : '#f0f0f0';
+  const axisColor = dark ? '#555' : '#ccc';
+  const textColor = dark ? '#6b7280' : '#9ca3af';
+
+  // Price grid lines (5 lines)
+  const priceRange = priceMax - priceMin;
+  const gridLines = Array.from({ length: 6 }, (_, i) => {
+    const price = priceMin + (priceRange * i) / 5;
+    return { price, y: yScale(price) };
+  });
+
+  // Time labels (every ~1/6 of candles)
+  const timeStep = Math.max(1, Math.floor(candles.length / 6));
+  const timeLabels = candles
+    .filter((_, i) => i % timeStep === 0 || i === candles.length - 1)
+    .map((c, _, arr) => ({ time: c.time, x: xScale(candles.indexOf(c)) }));
 
   return (
-    <svg width="160" height="90" viewBox="0 0 160 90">
-      {/* Background arc */}
-      <defs>
-        <linearGradient id="gaugeGrad" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#ef4444" />
-          <stop offset="25%" stopColor="#f59e0b" />
-          <stop offset="50%" stopColor="#6b7280" />
-          <stop offset="75%" stopColor="#84cc16" />
-          <stop offset="100%" stopColor="#22c55e" />
-        </linearGradient>
-      </defs>
-      <path d="M 15 80 A 65 65 0 0 1 145 80" fill="none" stroke="#374151" strokeWidth="12" strokeLinecap="round" />
-      <path d="M 15 80 A 65 65 0 0 1 145 80" fill="none" stroke="url(#gaugeGrad)" strokeWidth="12" strokeLinecap="round"
-        strokeDasharray={`${(value / 100) * 204} 204`} />
-      {/* Needle */}
-      <line
-        x1="80" y1="80"
-        x2={80 + Math.cos((angle * Math.PI) / 180) * 50}
-        y2={80 - Math.sin((-angle * Math.PI) / 180) * 50}
-        stroke="#9ca3af" strokeWidth="2.5" strokeLinecap="round"
+    <div
+      ref={containerRef}
+      className="w-full h-full cursor-crosshair"
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+    >
+      <svg width={dims.w} height={dims.h} className="select-none">
+        {/* Grid */}
+        {gridLines.map((gl, i) => (
+          <g key={i}>
+            <line x1={margin.left} y1={gl.y} x2={dims.w - margin.right} y2={gl.y}
+              stroke={gridColor} strokeWidth={1} />
+            <text x={dims.w - margin.right + 8} y={gl.y + 4}
+              fill={textColor} fontSize="10" fontFamily="monospace">
+              {formatPrice(gl.price)}
+            </text>
+          </g>
+        ))}
+
+        {/* Volume bars */}
+        {candles.map((c, i) => {
+          const x = xScale(i);
+          const barH = volScale(c.volume);
+          const barBottom = dims.h - margin.bottom;
+          return (
+            <rect
+              key={`vol-${i}`}
+              x={x - candleWidth / 2}
+              y={barBottom - barH}
+              width={candleWidth}
+              height={barH}
+              fill={c.close >= c.open ? (dark ? '#22c55e20' : '#22c55e30') : (dark ? '#ef444420' : '#ef444430')}
+            />
+          );
+        })}
+
+        {/* Chart content */}
+        {chartType === 'candle' ? (
+          // Candlestick chart
+          candles.map((c, i) => {
+            const x = xScale(i);
+            const openY = yScale(c.open);
+            const closeY = yScale(c.close);
+            const highY = yScale(c.high);
+            const lowY = yScale(c.low);
+            const bull = c.close >= c.open;
+            const color = bull ? '#22c55e' : '#ef4444';
+            const bodyTop = Math.min(openY, closeY);
+            const bodyH = Math.max(1, Math.abs(openY - closeY));
+
+            return (
+              <g key={i}>
+                {/* Wick */}
+                <line x1={x} y1={highY} x2={x} y2={lowY}
+                  stroke={color} strokeWidth={1} />
+                {/* Body */}
+                <rect
+                  x={x - candleWidth / 2}
+                  y={bodyTop}
+                  width={candleWidth}
+                  height={bodyH}
+                  fill={bull ? color : color}
+                  stroke={color}
+                  strokeWidth={0.5}
+                />
+              </g>
+            );
+          })
+        ) : (
+          // Line chart
+          <>
+            <defs>
+              <linearGradient id="lineGrad" x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor={coinColor} stopOpacity="0.15" />
+                <stop offset="100%" stopColor={coinColor} stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <path
+              d={candles.map((c, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(c.close)}`).join(' ')
+                + ` L ${xScale(candles.length - 1)} ${dims.h - margin.bottom - volH}`
+                + ` L ${xScale(0)} ${dims.h - margin.bottom - volH} Z`}
+              fill="url(#lineGrad)"
+            />
+            <path
+              d={candles.map((c, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(c.close)}`).join(' ')}
+              fill="none"
+              stroke={coinColor}
+              strokeWidth={1.5}
+              strokeLinejoin="round"
+            />
+          </>
+        )}
+
+        {/* Time axis */}
+        {timeLabels.map((tl, i) => (
+          <text key={i} x={tl.x} y={dims.h - 8}
+            fill={textColor} fontSize="9" textAnchor="middle" fontFamily="monospace">
+            {formatTime(tl.time)}
+          </text>
+        ))}
+
+        {/* Crosshair */}
+        {hoveredIdx >= 0 && mousePos && (
+          <>
+            {/* Vertical line */}
+            <line
+              x1={xScale(hoveredIdx)} y1={margin.top}
+              x2={xScale(hoveredIdx)} y2={dims.h - margin.bottom}
+              stroke={dark ? '#444' : '#bbb'} strokeWidth={1} strokeDasharray="3,3"
+            />
+            {/* Horizontal line */}
+            <line
+              x1={margin.left} y1={mousePos.y}
+              x2={dims.w - margin.right} y2={mousePos.y}
+              stroke={dark ? '#444' : '#bbb'} strokeWidth={1} strokeDasharray="3,3"
+            />
+            {/* Price label on right axis */}
+            <rect
+              x={dims.w - margin.right}
+              y={mousePos.y - 10}
+              width={margin.right}
+              height={20}
+              fill={dark ? '#2a2d3a' : '#374151'}
+              rx={3}
+            />
+            <text
+              x={dims.w - margin.right + 8}
+              y={mousePos.y + 4}
+              fill="white" fontSize="10" fontFamily="monospace"
+            >
+              {formatPrice(priceMin + (1 - (mousePos.y - margin.top) / (chartH - volH)) * priceRange)}
+            </text>
+            {/* Time label on bottom */}
+            {candles[hoveredIdx] && (
+              <>
+                <rect
+                  x={xScale(hoveredIdx) - 40}
+                  y={dims.h - margin.bottom}
+                  width={80}
+                  height={18}
+                  fill={dark ? '#2a2d3a' : '#374151'}
+                  rx={3}
+                />
+                <text
+                  x={xScale(hoveredIdx)}
+                  y={dims.h - margin.bottom + 13}
+                  fill="white" fontSize="9" textAnchor="middle" fontFamily="monospace"
+                >
+                  {formatTime(candles[hoveredIdx].time)}
+                </text>
+              </>
+            )}
+            {/* Dot on price */}
+            <circle
+              cx={xScale(hoveredIdx)}
+              cy={yScale(candles[hoveredIdx].close)}
+              r={4}
+              fill={coinColor}
+              stroke={dark ? '#0f1117' : 'white'}
+              strokeWidth={2}
+            />
+          </>
+        )}
+      </svg>
+    </div>
+  );
+}
+
+// --- Sub-components ---
+function StatCard({ label, value, dark, color }: { label: string; value: string; dark: boolean; color?: string }) {
+  return (
+    <div className={`rounded-xl border px-4 py-3 ${dark ? 'bg-[#181b25] border-[#2a2d3a]' : 'bg-white border-gray-200'}`}>
+      <div className={`text-[11px] uppercase tracking-wider mb-1 ${dark ? 'text-gray-500' : 'text-gray-400'}`}>{label}</div>
+      <div className={`text-lg font-bold tabular-nums ${color || (dark ? 'text-gray-100' : 'text-gray-900')}`}>{value}</div>
+    </div>
+  );
+}
+
+function FearGreedBar({ value, dark }: { value: number; dark: boolean }) {
+  return (
+    <div className={`w-32 h-2 rounded-full overflow-hidden ${dark ? 'bg-gray-800' : 'bg-gray-200'}`}>
+      <div
+        className="h-full rounded-full transition-all"
+        style={{
+          width: `${value}%`,
+          background: `linear-gradient(90deg, #ef4444, #f59e0b, #84cc16, #22c55e)`,
+        }}
       />
-      <circle cx="80" cy="80" r="4" fill="#9ca3af" />
-    </svg>
-  );
-}
-
-function LargeChart({ data, positive, color }: { data: number[]; positive: boolean; color: string }) {
-  if (data.length < 2) return <div className="h-32 bg-gray-100 rounded" />;
-
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-  const height = 140;
-  const width = 500;
-  const padding = 4;
-
-  const points = data.map((val, i) => {
-    const x = padding + (i / (data.length - 1)) * (width - padding * 2);
-    const y = padding + (1 - (val - min) / range) * (height - padding * 2);
-    return { x, y };
-  });
-
-  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-  const areaPath = linePath + ` L ${points[points.length - 1].x} ${height} L ${points[0].x} ${height} Z`;
-
-  return (
-    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-      <defs>
-        <linearGradient id="largeGrad" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor={color} stopOpacity="0.15" />
-          <stop offset="100%" stopColor={color} stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      <path d={areaPath} fill="url(#largeGrad)" />
-      <path d={linePath} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx={points[points.length - 1].x} cy={points[points.length - 1].y} r="4" fill={color} />
-    </svg>
-  );
-}
-
-function MiniChart({ data, positive, light }: { data: number[]; positive: boolean; light?: boolean }) {
-  if (data.length < 2) return <div className="h-8 bg-gray-100 rounded" />;
-
-  const min = Math.min(...data);
-  const max = Math.max(...data);
-  const range = max - min || 1;
-  const height = 32;
-  const width = 100;
-
-  const points = data.map((val, i) => {
-    const x = (i / (data.length - 1)) * width;
-    const y = 2 + (1 - (val - min) / range) * (height - 4);
-    return { x, y };
-  });
-
-  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
-  const color = positive ? (light ? '#86efac' : '#22c55e') : (light ? '#fca5a5' : '#ef4444');
-
-  return (
-    <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none">
-      <path d={linePath} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
+    </div>
   );
 }
