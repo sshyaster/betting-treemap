@@ -6,11 +6,12 @@ import CryptoTicker from './CryptoTicker';
 import CryptoDashboard from './CryptoDashboard';
 import Insights from './Insights';
 import DataTable from './DataTable';
+import TwitterFeed from './TwitterFeed';
 import { Market, ApiResponse, Timeframe } from '@/lib/types';
 import { buildTreemapData, getVolumeForTimeframe } from '@/lib/utils';
 
 type Platform = 'polymarket' | 'kalshi';
-type Tab = 'markets' | 'crypto' | 'insights' | 'data';
+type Tab = 'markets' | 'crypto' | 'feed' | 'insights' | 'data';
 
 const TIMEFRAMES: { key: Timeframe; label: string }[] = [
   { key: '24h', label: '24h' },
@@ -24,6 +25,7 @@ const TIMEFRAMES: { key: Timeframe; label: string }[] = [
 const TABS: { key: Tab; label: string }[] = [
   { key: 'markets', label: 'Markets' },
   { key: 'crypto', label: 'Crypto' },
+  { key: 'feed', label: 'Feed' },
   { key: 'insights', label: 'Insights' },
   { key: 'data', label: 'Data' },
 ];
@@ -165,13 +167,8 @@ export default function Dashboard() {
       {/* Header */}
       <header className="bg-gray-900 text-white sticky top-0 z-40">
         <div className="max-w-[1800px] mx-auto px-3 sm:px-4">
-          {/* Top row: logo + controls */}
-          <div className="flex items-center justify-between py-2.5">
-            <h1 className="text-sm sm:text-base font-bold tracking-tight whitespace-nowrap">
-              <span className="text-white">Prediction</span>
-              <span className="text-gray-400">Markets</span>
-            </h1>
-
+          {/* Top row: controls */}
+          <div className="flex items-center justify-end py-2.5">
             <div className="flex items-center gap-2 sm:gap-3">
               {/* Platform toggle (markets tab) */}
               {tab === 'markets' && (
@@ -291,6 +288,8 @@ export default function Dashboard() {
         )}
 
         {tab === 'crypto' && <CryptoDashboard dark={dark} />}
+
+        {tab === 'feed' && <TwitterFeed dark={dark} />}
 
         {tab === 'insights' && (
           <Insights polyMarkets={polyMarkets} kalshiMarkets={kalshiMarkets} timeframe={timeframe} dark={dark} />
