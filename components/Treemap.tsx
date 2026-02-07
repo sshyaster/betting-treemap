@@ -184,56 +184,44 @@ export default function Treemap({ data, width, height, onMarketClick, totalVolum
 
     // --- ZOOM ANIMATION ---
     if (isAnimating) {
+      // Remove ALL existing content groups first to prevent accumulation
+      const oldGroups = svg.selectAll<SVGGElement, unknown>('g.content');
+
       if (zoomDirection === 'in' && zoomTarget) {
         // Zoom IN: old content scales up from clicked box, fades out, new content fades in
-        const oldContent = svg.select('g.content');
-        if (!oldContent.empty()) {
-          // Scale old content: zoom into the clicked box
+        if (!oldGroups.empty()) {
           const sx = width / (zoomTarget.x1 - zoomTarget.x0);
           const sy = height / (zoomTarget.y1 - zoomTarget.y0);
           const tx = -zoomTarget.x0 * sx;
           const ty = -zoomTarget.y0 * sy;
 
-          oldContent
+          oldGroups
             .transition()
             .duration(ZOOM_DURATION)
             .attr('transform', `translate(${tx},${ty}) scale(${sx},${sy})`)
             .style('opacity', 0)
-            .on('end', () => {
-              oldContent.remove();
-              drawTreemap(svg, parentNodes, leafNodes, 1);
-              setIsAnimating(false);
-            });
-
-          // Draw new content starting transparent
-          drawTreemap(svg, parentNodes, leafNodes, 0);
-          svg.select('g.content:last-child')
-            .transition()
-            .delay(ZOOM_DURATION * 0.3)
-            .duration(ZOOM_DURATION * 0.7)
-            .style('opacity', 1);
-        } else {
-          drawTreemap(svg, parentNodes, leafNodes, 0);
-          svg.select('g.content')
-            .transition()
-            .duration(ZOOM_DURATION * 0.7)
-            .style('opacity', 1);
-          setTimeout(() => setIsAnimating(false), ZOOM_DURATION * 0.7);
+            .on('end', function() { d3.select(this).remove(); });
         }
+
+        // Draw new content starting transparent, then fade in
+        const newG = drawTreemap(svg, parentNodes, leafNodes, 0);
+        newG
+          .transition()
+          .delay(ZOOM_DURATION * 0.3)
+          .duration(ZOOM_DURATION * 0.7)
+          .style('opacity', 1)
+          .on('end', () => setIsAnimating(false));
+
       } else {
-        // Zoom OUT: new content starts zoomed in on a central area, scales back to normal
-        const oldContent = svg.select('g.content');
-        if (!oldContent.empty()) {
-          oldContent
+        // Zoom OUT: old content fades, new content zooms from center to normal
+        if (!oldGroups.empty()) {
+          oldGroups
             .transition()
             .duration(ZOOM_DURATION * 0.4)
             .style('opacity', 0)
-            .on('end', () => {
-              oldContent.remove();
-            });
+            .on('end', function() { d3.select(this).remove(); });
         }
 
-        // New content starts slightly zoomed in from center, scales to normal
         const g = drawTreemap(svg, parentNodes, leafNodes, 0);
         const cx = width / 2;
         const cy = height / 2;
