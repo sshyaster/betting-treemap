@@ -7,6 +7,14 @@
     {
       "path": "/api/cron/markets",
       "schedule": "5 0 * * *"
+    },
+    {
+      "path": "/api/cron/news",
+      "schedule": "10 0 * * *"
+    },
+    {
+      "path": "/api/cron/ohlc",
+      "schedule": "15 0 * * *"
     }
   ]
 }

@@ -35,10 +35,8 @@ export async function GET(req: NextRequest) {
       fetchKalshiMarkets(),
     ]);
 
-    // Top 50 per platform to keep storage manageable
-    const topPoly = polymarkets.slice(0, 50);
-    const topKalshi = kalshiMarkets.slice(0, 50);
-    const allMarkets = [...topPoly, ...topKalshi];
+    // Save all markets for full historical record
+    const allMarkets = [...polymarkets, ...kalshiMarkets];
 
     await prisma.marketSnapshot.createMany({
       data: allMarkets.map(m => ({
@@ -59,8 +57,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       success: true,
       count: allMarkets.length,
-      polymarket: topPoly.length,
-      kalshi: topKalshi.length,
+      polymarket: polymarkets.length,
+      kalshi: kalshiMarkets.length,
       snapshotAt: dayStart.toISOString(),
     });
   } catch (error) {

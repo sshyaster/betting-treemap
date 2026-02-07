@@ -51,3 +51,43 @@ model MarketSnapshot {
   @@index([platform, snapshotAt])
   @@index([marketId, snapshotAt])
 }
+
+model NewsArticle {
+  id          String   @id @default(cuid())
+  title       String
+  url         String   @unique
+  source      String
+  category    String
+  publishedAt DateTime
+  archivedAt  DateTime @default(now())
+
+  @@index([category, publishedAt])
+  @@index([publishedAt])
+}
+
+model SavedArticle {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String
+  url       String
+  source    String
+  category  String
+  savedAt   DateTime @default(now())
+
+  @@unique([userId, url])
+  @@index([userId, savedAt])
+}
+
+model CryptoOHLC {
+  id     String   @id @default(cuid())
+  coinId String
+  date   DateTime
+  open   Float
+  high   Float
+  low    Float
+  close  Float
+  volume Float
+
+  @@unique([coinId, date])
+  @@index([coinId, date])
+}
