@@ -20,3 +20,34 @@ model Drawing {
 
   @@index([userId, coinId, interval])
 }
+
+model CryptoSnapshot {
+  id         String   @id @default(cuid())
+  coinId     String
+  price      Float
+  marketCap  Float
+  change24h  Float
+  volume24h  Float    @default(0)
+  snapshotAt DateTime @default(now())
+
+  @@index([coinId, snapshotAt])
+  @@unique([coinId, snapshotAt])
+}
+
+model MarketSnapshot {
+  id           String   @id @default(cuid())
+  marketId     String
+  title        String
+  platform     String
+  category     String
+  volume24hr   Float
+  volume1wk    Float
+  volume1mo    Float
+  volumeAll    Float
+  openInterest Float
+  price        Float?
+  snapshotAt   DateTime @default(now())
+
+  @@index([platform, snapshotAt])
+  @@index([marketId, snapshotAt])
+}

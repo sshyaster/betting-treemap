@@ -1,8 +1,12 @@
 {
   "crons": [
     {
-      "path": "/api/markets",
+      "path": "/api/cron/crypto",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/markets",
+      "schedule": "5 0 * * *"
     }
   ]
 }

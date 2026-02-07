@@ -7,6 +7,8 @@ import { useDrawingTool } from '@/lib/use-drawing-tool';
 import { pixelToData } from '@/lib/drawing-utils';
 import DrawingOverlay from './DrawingOverlay';
 import DrawingToolbar from './DrawingToolbar';
+import Sparkline from './Sparkline';
+import { useCryptoSnapshots } from '@/lib/use-snapshots';
 
 interface Candle {
   time: number;
@@ -458,8 +460,11 @@ export default function CryptoDashboard({ dark = false }: CryptoDashboardProps) 
                   {summary.change24h >= 0 ? '+' : ''}{summary.change24h.toFixed(2)}%
                 </span>
               </div>
-              <div className={`text-sm font-bold tabular-nums ${isSelected ? 'text-white' : textPrimary}`}>
-                {formatPrice(summary.price)}
+              <div className="flex items-center justify-between">
+                <span className={`text-sm font-bold tabular-nums ${isSelected ? 'text-white' : textPrimary}`}>
+                  {formatPrice(summary.price)}
+                </span>
+                <CoinSparkline coinId={coin.id} />
               </div>
             </button>
           );
@@ -919,6 +924,12 @@ function InteractiveChart({
 }
 
 // --- Sub-components ---
+function CoinSparkline({ coinId }: { coinId: string }) {
+  const { snapshots, loading } = useCryptoSnapshots(coinId, 30);
+  if (loading || snapshots.length < 2) return null;
+  return <Sparkline data={snapshots.map(s => s.price)} color="auto" width={60} height={20} />;
+}
+
 function CoinLogo({ coin, size = 20 }: { coin: { logo: string; color: string; symbol: string }; size?: number }) {
   const [failed, setFailed] = useState(false);
 
