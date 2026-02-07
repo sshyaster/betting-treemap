@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 
 interface FeedAccount {
   handle: string;
@@ -21,19 +21,39 @@ interface TwitterFeedProps {
 export default function TwitterFeed({ dark = false }: TwitterFeedProps) {
   const [selectedAccount, setSelectedAccount] = useState<string | 'all'>('all');
   const [scriptLoaded, setScriptLoaded] = useState(false);
+  const [scriptError, setScriptError] = useState(false);
 
-  // Load Twitter widgets.js once
+  // Load Twitter widgets.js
   useEffect(() => {
-    if (document.getElementById('twitter-wjs')) {
+    if ((window as any).twttr?.widgets) {
       setScriptLoaded(true);
       return;
     }
+
+    // Remove old script if exists
+    const existing = document.getElementById('twitter-wjs');
+    if (existing) existing.remove();
 
     const script = document.createElement('script');
     script.id = 'twitter-wjs';
     script.src = 'https://platform.twitter.com/widgets.js';
     script.async = true;
-    script.onload = () => setScriptLoaded(true);
+    script.charset = 'utf-8';
+    script.onload = () => {
+      // Twitter sets twttr.ready
+      if ((window as any).twttr?.widgets) {
+        setScriptLoaded(true);
+      } else {
+        // Wait for twttr.ready
+        (window as any).twttr?.ready?.(() => setScriptLoaded(true));
+        // Fallback timeout
+        setTimeout(() => {
+          if ((window as any).twttr?.widgets) setScriptLoaded(true);
+          else setScriptError(true);
+        }, 3000);
+      }
+    };
+    script.onerror = () => setScriptError(true);
     document.head.appendChild(script);
   }, []);
 
@@ -41,6 +61,7 @@ export default function TwitterFeed({ dark = false }: TwitterFeedProps) {
   const border = dark ? 'border-[#2a2d3a]' : 'border-gray-200';
   const textPrimary = dark ? 'text-gray-100' : 'text-gray-900';
   const textSecondary = dark ? 'text-gray-400' : 'text-gray-500';
+  const textMuted = dark ? 'text-gray-500' : 'text-gray-400';
 
   const visibleAccounts = selectedAccount === 'all'
     ? ACCOUNTS
@@ -88,22 +109,23 @@ export default function TwitterFeed({ dark = false }: TwitterFeedProps) {
 
       {/* Info banner */}
       <div className={`${cardBg} border ${border} rounded-xl px-4 py-2.5 flex items-center gap-2`}>
-        <div className={`w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse`} />
+        <div className="w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
         <span className={`text-xs ${textSecondary}`}>
           Live feed — tweets from tracked accounts that may impact prediction markets and crypto
         </span>
       </div>
 
-      {/* Timeline embeds */}
+      {/* Timeline columns */}
       <div className={`grid gap-4 ${selectedAccount === 'all' ? 'grid-cols-1 lg:grid-cols-3' : 'grid-cols-1 max-w-2xl mx-auto'}`}>
         {visibleAccounts.map(acc => (
-          <TimelineEmbed
-            key={acc.handle}
+          <TimelineColumn
+            key={`${acc.handle}-${dark}`}
             handle={acc.handle}
             label={acc.label}
             color={acc.color}
             dark={dark}
             scriptLoaded={scriptLoaded}
+            scriptError={scriptError}
             tall={selectedAccount !== 'all'}
           />
         ))}
@@ -112,84 +134,76 @@ export default function TwitterFeed({ dark = false }: TwitterFeedProps) {
   );
 }
 
-function TimelineEmbed({
-  handle, label, color, dark, scriptLoaded, tall,
+function TimelineColumn({
+  handle, label, color, dark, scriptLoaded, scriptError, tall,
 }: {
   handle: string;
   label: string;
   color: string;
   dark: boolean;
   scriptLoaded: boolean;
+  scriptError: boolean;
   tall: boolean;
 }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const renderedRef = useRef(false);
+  const widgetRef = useRef<HTMLDivElement>(null);
+  const [widgetFailed, setWidgetFailed] = useState(false);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
-    if (!scriptLoaded || !containerRef.current || renderedRef.current) return;
+    if (!scriptLoaded || !widgetRef.current) return;
 
-    // Clear any existing content
-    containerRef.current.innerHTML = '';
+    // Clear previous content
+    widgetRef.current.innerHTML = '';
+    setWidgetFailed(false);
 
-    // Create the anchor tag Twitter expects
-    const anchor = document.createElement('a');
-    anchor.className = 'twitter-timeline';
-    anchor.setAttribute('data-theme', dark ? 'dark' : 'light');
-    anchor.setAttribute('data-chrome', 'noheader nofooter noborders transparent');
-    anchor.setAttribute('data-height', tall ? '800' : '600');
-    anchor.setAttribute('data-width', '100%');
-    anchor.setAttribute('data-tweet-limit', '10');
-    anchor.href = `https://twitter.com/${handle}`;
-    anchor.textContent = `Tweets by @${handle}`;
-
-    containerRef.current.appendChild(anchor);
-
-    // Ask Twitter to render the widget
-    if ((window as any).twttr?.widgets) {
-      (window as any).twttr.widgets.load(containerRef.current);
+    const twttr = (window as any).twttr;
+    if (!twttr?.widgets?.createTimeline) {
+      setWidgetFailed(true);
+      return;
     }
 
-    renderedRef.current = true;
+    // Use the programmatic API
+    twttr.widgets.createTimeline(
+      { sourceType: 'profile', screenName: handle },
+      widgetRef.current,
+      {
+        height: tall ? 800 : 600,
+        theme: dark ? 'dark' : 'light',
+        chrome: 'noheader nofooter noborders transparent',
+        dnt: true,
+        tweetLimit: 15,
+      }
+    ).then((el: any) => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      if (!el) setWidgetFailed(true);
+    }).catch(() => {
+      setWidgetFailed(true);
+    });
+
+    // Timeout fallback
+    timeoutRef.current = setTimeout(() => {
+      if (widgetRef.current && !widgetRef.current.querySelector('iframe')) {
+        setWidgetFailed(true);
+      }
+    }, 8000);
 
     return () => {
-      renderedRef.current = false;
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, [scriptLoaded, handle, dark, tall]);
-
-  // Re-render when dark mode changes
-  useEffect(() => {
-    if (!scriptLoaded || !containerRef.current) return;
-
-    renderedRef.current = false;
-    containerRef.current.innerHTML = '';
-
-    const anchor = document.createElement('a');
-    anchor.className = 'twitter-timeline';
-    anchor.setAttribute('data-theme', dark ? 'dark' : 'light');
-    anchor.setAttribute('data-chrome', 'noheader nofooter noborders transparent');
-    anchor.setAttribute('data-height', tall ? '800' : '600');
-    anchor.setAttribute('data-width', '100%');
-    anchor.setAttribute('data-tweet-limit', '10');
-    anchor.href = `https://twitter.com/${handle}`;
-    anchor.textContent = `Tweets by @${handle}`;
-
-    containerRef.current.appendChild(anchor);
-
-    if ((window as any).twttr?.widgets) {
-      (window as any).twttr.widgets.load(containerRef.current);
-    }
-
-    renderedRef.current = true;
-  }, [dark, scriptLoaded, handle, tall]);
 
   const cardBg = dark ? 'bg-[#181b25]' : 'bg-white';
   const border = dark ? 'border-[#2a2d3a]' : 'border-gray-200';
   const textPrimary = dark ? 'text-gray-100' : 'text-gray-900';
+  const textMuted = dark ? 'text-gray-500' : 'text-gray-400';
+  const feedHeight = tall ? 800 : 600;
+
+  const showFallback = scriptError || widgetFailed;
 
   return (
-    <div className={`${cardBg} border ${border} rounded-xl overflow-hidden`}>
+    <div className={`${cardBg} border ${border} rounded-xl overflow-hidden flex flex-col`}>
       {/* Account header */}
-      <div className="flex items-center gap-2.5 px-4 py-3" style={{ borderBottom: `2px solid ${color}` }}>
+      <div className="flex items-center gap-2.5 px-4 py-3 flex-shrink-0" style={{ borderBottom: `2px solid ${color}` }}>
         <div
           className="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold"
           style={{ backgroundColor: color }}
@@ -198,7 +212,7 @@ function TimelineEmbed({
         </div>
         <div>
           <div className={`text-sm font-semibold ${textPrimary}`}>{label}</div>
-          <div className={`text-[11px] ${dark ? 'text-gray-500' : 'text-gray-400'}`}>@{handle}</div>
+          <div className={`text-[11px] ${textMuted}`}>@{handle}</div>
         </div>
         <a
           href={`https://x.com/${handle}`}
@@ -214,12 +228,27 @@ function TimelineEmbed({
         </a>
       </div>
 
-      {/* Embedded timeline */}
-      <div ref={containerRef} className="px-1">
-        {!scriptLoaded && (
-          <div className="flex items-center justify-center py-20">
-            <div className={`w-5 h-5 border-2 rounded-full animate-spin ${dark ? 'border-gray-700 border-t-gray-400' : 'border-gray-200 border-t-gray-600'}`} />
+      {/* Scrollable timeline area */}
+      <div className="overflow-y-auto flex-1" style={{ height: feedHeight }}>
+        {showFallback ? (
+          /* Fallback: direct iframe embed */
+          <div className="h-full">
+            <iframe
+              src={`https://syndication.twitter.com/srv/timeline-profile/screen-name/${handle}?dnt=true&embedId=tw-${handle}&lang=en&theme=${dark ? 'dark' : 'light'}&showReplies=false`}
+              className="w-full h-full border-0"
+              sandbox="allow-scripts allow-same-origin allow-popups"
+              title={`@${handle} timeline`}
+            />
           </div>
+        ) : !scriptLoaded ? (
+          /* Loading state */
+          <div className="flex flex-col items-center justify-center py-20 gap-3">
+            <div className={`w-5 h-5 border-2 rounded-full animate-spin ${dark ? 'border-gray-700 border-t-gray-400' : 'border-gray-200 border-t-gray-600'}`} />
+            <span className={`text-xs ${textMuted}`}>Loading feed...</span>
+          </div>
+        ) : (
+          /* Twitter widget renders here */
+          <div ref={widgetRef} className="min-h-[200px]" />
         )}
       </div>
     </div>

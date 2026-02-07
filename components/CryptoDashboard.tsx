@@ -42,7 +42,7 @@ const COINS = [
   { id: 'chainlink', symbol: 'LINK', name: 'Chainlink', pair: 'LINKUSD', resultKey: 'LINKUSD', color: '#2A5ADA' },
 ];
 
-type ChartInterval = '15m' | '1h' | '4h' | '1d' | '1w';
+type ChartInterval = '15m' | '1h' | '4h' | '1d' | '1w' | 'ytd' | 'all';
 
 const INTERVALS: { key: ChartInterval; label: string; krakenInterval: number; sinceDelta: number }[] = [
   { key: '15m', label: '15m', krakenInterval: 15, sinceDelta: 24 * 60 * 60 },
@@ -50,6 +50,12 @@ const INTERVALS: { key: ChartInterval; label: string; krakenInterval: number; si
   { key: '4h', label: '4H', krakenInterval: 240, sinceDelta: 30 * 24 * 60 * 60 },
   { key: '1d', label: '1D', krakenInterval: 1440, sinceDelta: 365 * 24 * 60 * 60 },
   { key: '1w', label: '1W', krakenInterval: 10080, sinceDelta: 3 * 365 * 24 * 60 * 60 },
+  { key: 'ytd', label: 'YTD', krakenInterval: 1440, sinceDelta: (() => {
+    const now = new Date();
+    const jan1 = new Date(now.getFullYear(), 0, 1);
+    return Math.floor((now.getTime() - jan1.getTime()) / 1000);
+  })() },
+  { key: 'all', label: 'ALL', krakenInterval: 10080, sinceDelta: 15 * 365 * 24 * 60 * 60 },
 ];
 
 type ChartType = 'candle' | 'line';
@@ -200,7 +206,7 @@ export default function CryptoDashboard({ dark = false }: CryptoDashboardProps) 
 
   const formatTime = (ts: number): string => {
     const d = new Date(ts * 1000);
-    if (interval === '1d' || interval === '1w') {
+    if (interval === '1d' || interval === '1w' || interval === 'ytd' || interval === 'all') {
       return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' });
     }
     return d.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -465,7 +471,7 @@ export default function CryptoDashboard({ dark = false }: CryptoDashboardProps) 
   );
 }
 
-// --- Interactive Chart Component ---
+// --- Interactive Chart Component with Zoom & Pan ---
 function InteractiveChart({
   candles, dark, chartType, coinColor, onCrosshairChange, formatPrice, formatTime,
 }: {
@@ -481,6 +487,19 @@ function InteractiveChart({
   const [dims, setDims] = useState({ w: 0, h: 0 });
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
 
+  // Zoom/pan state: visible range of candle indices
+  const [viewStart, setViewStart] = useState(0);
+  const [viewEnd, setViewEnd] = useState(0);
+  const isDragging = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartView = useRef({ start: 0, end: 0 });
+
+  // Reset view when candles change
+  useEffect(() => {
+    setViewStart(0);
+    setViewEnd(candles.length - 1);
+  }, [candles.length]);
+
   useEffect(() => {
     if (!containerRef.current) return;
     const obs = new ResizeObserver(entries => {
@@ -491,63 +510,134 @@ function InteractiveChart({
     return () => obs.disconnect();
   }, []);
 
-  const margin = { top: 10, right: 70, bottom: 30, left: 10 };
-  const chartW = dims.w - margin.left - margin.right;
-  const chartH = dims.h - margin.top - margin.bottom;
-  const volH = chartH * 0.15; // bottom 15% for volume
-
-  const { priceMin, priceMax, volMax, candleWidth } = useMemo(() => {
-    if (candles.length === 0) return { priceMin: 0, priceMax: 1, volMax: 1, candleWidth: 4 };
-    const prices = candles.flatMap(c => [c.high, c.low]);
-    const min = Math.min(...prices);
-    const max = Math.max(...prices);
-    const pad = (max - min) * 0.05;
-    const vMax = Math.max(...candles.map(c => c.volume));
-    const cw = Math.max(1, Math.min(12, (chartW / candles.length) * 0.7));
-    return { priceMin: min - pad, priceMax: max + pad, volMax: vMax, candleWidth: cw };
-  }, [candles, chartW]);
-
-  const xScale = useCallback((i: number) => margin.left + (i / Math.max(1, candles.length - 1)) * chartW, [margin.left, candles.length, chartW]);
-  const yScale = useCallback((price: number) => margin.top + (1 - (price - priceMin) / (priceMax - priceMin)) * (chartH - volH), [margin.top, priceMin, priceMax, chartH, volH]);
-  const volScale = useCallback((vol: number) => (vol / volMax) * volH, [volMax, volH]);
-
-  // Find nearest candle to mouse
-  const hoveredIdx = useMemo(() => {
-    if (!mousePos || candles.length === 0 || chartW <= 0) return -1;
-    const mx = mousePos.x - margin.left;
-    const idx = Math.round((mx / chartW) * (candles.length - 1));
-    return Math.max(0, Math.min(candles.length - 1, idx));
-  }, [mousePos, candles.length, chartW, margin.left]);
-
-  useEffect(() => {
-    if (hoveredIdx >= 0 && candles[hoveredIdx]) {
-      onCrosshairChange({
-        candle: candles[hoveredIdx],
-        x: xScale(hoveredIdx),
-        y: yScale(candles[hoveredIdx].close),
-      });
-    } else {
-      onCrosshairChange(null);
+  // Clamp view range
+  const clampView = useCallback((start: number, end: number): [number, number] => {
+    const minRange = 10; // minimum visible candles
+    let s = Math.max(0, Math.round(start));
+    let e = Math.min(candles.length - 1, Math.round(end));
+    if (e - s < minRange) {
+      const mid = (s + e) / 2;
+      s = Math.max(0, Math.round(mid - minRange / 2));
+      e = Math.min(candles.length - 1, s + minRange);
+      s = Math.max(0, e - minRange);
     }
-  }, [hoveredIdx, candles, xScale, yScale, onCrosshairChange]);
+    return [s, e];
+  }, [candles.length]);
+
+  // Mouse wheel zoom
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+    const range = viewEnd - viewStart;
+    const zoomFactor = e.deltaY > 0 ? 0.1 : -0.1; // scroll down = zoom out
+    const zoomAmount = range * zoomFactor;
+
+    // Zoom toward mouse position
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const mx = e.clientX - rect.left - 10; // margin.left
+    const chartWidth = dims.w - 80; // margin.left + margin.right
+    const mouseRatio = Math.max(0, Math.min(1, mx / chartWidth));
+
+    const newStart = viewStart - zoomAmount * mouseRatio;
+    const newEnd = viewEnd + zoomAmount * (1 - mouseRatio);
+    const [s, en] = clampView(newStart, newEnd);
+    setViewStart(s);
+    setViewEnd(en);
+  }, [viewStart, viewEnd, dims.w, clampView]);
+
+  // Drag to pan
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    isDragging.current = true;
+    dragStartX.current = e.clientX;
+    dragStartView.current = { start: viewStart, end: viewEnd };
+  }, [viewStart, viewEnd]);
 
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
     const rect = containerRef.current?.getBoundingClientRect();
     if (!rect) return;
     setMousePos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+
+    if (isDragging.current) {
+      const dx = e.clientX - dragStartX.current;
+      const chartWidth = dims.w - 80;
+      const range = dragStartView.current.end - dragStartView.current.start;
+      const candleShift = -(dx / chartWidth) * range;
+      const newStart = dragStartView.current.start + candleShift;
+      const newEnd = dragStartView.current.end + candleShift;
+      const [s, en] = clampView(newStart, newEnd);
+      setViewStart(s);
+      setViewEnd(en);
+    }
+  }, [dims.w, clampView]);
+
+  const handleMouseUp = useCallback(() => {
+    isDragging.current = false;
   }, []);
 
   const handleMouseLeave = useCallback(() => {
+    isDragging.current = false;
     setMousePos(null);
     onCrosshairChange(null);
   }, [onCrosshairChange]);
+
+  // Reset zoom button
+  const handleResetZoom = useCallback(() => {
+    setViewStart(0);
+    setViewEnd(candles.length - 1);
+  }, [candles.length]);
+
+  const isZoomed = viewStart > 0 || viewEnd < candles.length - 1;
+
+  // Visible candles slice
+  const visibleCandles = useMemo(() => {
+    return candles.slice(viewStart, viewEnd + 1);
+  }, [candles, viewStart, viewEnd]);
+
+  const margin = { top: 10, right: 70, bottom: 30, left: 10 };
+  const chartW = dims.w - margin.left - margin.right;
+  const chartH = dims.h - margin.top - margin.bottom;
+  const volH = chartH * 0.15;
+
+  const { priceMin, priceMax, volMax, candleWidth } = useMemo(() => {
+    if (visibleCandles.length === 0) return { priceMin: 0, priceMax: 1, volMax: 1, candleWidth: 4 };
+    const prices = visibleCandles.flatMap(c => [c.high, c.low]);
+    const min = Math.min(...prices);
+    const max = Math.max(...prices);
+    const pad = (max - min) * 0.05;
+    const vMax = Math.max(...visibleCandles.map(c => c.volume));
+    const cw = Math.max(1, Math.min(12, (chartW / visibleCandles.length) * 0.7));
+    return { priceMin: min - pad, priceMax: max + pad, volMax: vMax, candleWidth: cw };
+  }, [visibleCandles, chartW]);
+
+  const xScale = useCallback((i: number) => margin.left + (i / Math.max(1, visibleCandles.length - 1)) * chartW, [margin.left, visibleCandles.length, chartW]);
+  const yScale = useCallback((price: number) => margin.top + (1 - (price - priceMin) / (priceMax - priceMin)) * (chartH - volH), [margin.top, priceMin, priceMax, chartH, volH]);
+  const volScale = useCallback((vol: number) => (vol / volMax) * volH, [volMax, volH]);
+
+  // Find nearest candle to mouse
+  const hoveredIdx = useMemo(() => {
+    if (!mousePos || visibleCandles.length === 0 || chartW <= 0) return -1;
+    const mx = mousePos.x - margin.left;
+    const idx = Math.round((mx / chartW) * (visibleCandles.length - 1));
+    return Math.max(0, Math.min(visibleCandles.length - 1, idx));
+  }, [mousePos, visibleCandles.length, chartW, margin.left]);
+
+  useEffect(() => {
+    if (hoveredIdx >= 0 && visibleCandles[hoveredIdx]) {
+      onCrosshairChange({
+        candle: visibleCandles[hoveredIdx],
+        x: xScale(hoveredIdx),
+        y: yScale(visibleCandles[hoveredIdx].close),
+      });
+    } else {
+      onCrosshairChange(null);
+    }
+  }, [hoveredIdx, visibleCandles, xScale, yScale, onCrosshairChange]);
 
   if (candles.length === 0 || dims.w === 0) {
     return <div ref={containerRef} className="w-full h-full" />;
   }
 
   const gridColor = dark ? '#1e2030' : '#f0f0f0';
-  const axisColor = dark ? '#555' : '#ccc';
   const textColor = dark ? '#6b7280' : '#9ca3af';
 
   // Price grid lines (5 lines)
@@ -557,19 +647,35 @@ function InteractiveChart({
     return { price, y: yScale(price) };
   });
 
-  // Time labels (every ~1/6 of candles)
-  const timeStep = Math.max(1, Math.floor(candles.length / 6));
-  const timeLabels = candles
-    .filter((_, i) => i % timeStep === 0 || i === candles.length - 1)
-    .map((c, _, arr) => ({ time: c.time, x: xScale(candles.indexOf(c)) }));
+  // Time labels
+  const timeStep = Math.max(1, Math.floor(visibleCandles.length / 6));
+  const timeLabels = visibleCandles
+    .map((c, i) => ({ time: c.time, idx: i }))
+    .filter((_, i) => i % timeStep === 0 || i === visibleCandles.length - 1)
+    .map(t => ({ time: t.time, x: xScale(t.idx) }));
 
   return (
     <div
       ref={containerRef}
-      className="w-full h-full cursor-crosshair"
+      className={`w-full h-full ${isDragging.current ? 'cursor-grabbing' : 'cursor-crosshair'}`}
       onMouseMove={handleMouseMove}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseLeave}
+      onWheel={handleWheel}
     >
+      {/* Reset zoom button */}
+      {isZoomed && (
+        <button
+          onClick={handleResetZoom}
+          className={`absolute top-2 right-20 z-10 px-2 py-1 text-[10px] font-medium rounded-md transition ${
+            dark ? 'bg-[#2a2d3a] text-gray-300 hover:text-white' : 'bg-gray-200 text-gray-600 hover:text-gray-900'
+          }`}
+        >
+          Reset Zoom
+        </button>
+      )}
+
       <svg width={dims.w} height={dims.h} className="select-none">
         {/* Grid */}
         {gridLines.map((gl, i) => (
@@ -584,7 +690,7 @@ function InteractiveChart({
         ))}
 
         {/* Volume bars */}
-        {candles.map((c, i) => {
+        {visibleCandles.map((c, i) => {
           const x = xScale(i);
           const barH = volScale(c.volume);
           const barBottom = dims.h - margin.bottom;
@@ -602,8 +708,7 @@ function InteractiveChart({
 
         {/* Chart content */}
         {chartType === 'candle' ? (
-          // Candlestick chart
-          candles.map((c, i) => {
+          visibleCandles.map((c, i) => {
             const x = xScale(i);
             const openY = yScale(c.open);
             const closeY = yScale(c.close);
@@ -616,16 +721,14 @@ function InteractiveChart({
 
             return (
               <g key={i}>
-                {/* Wick */}
                 <line x1={x} y1={highY} x2={x} y2={lowY}
                   stroke={color} strokeWidth={1} />
-                {/* Body */}
                 <rect
                   x={x - candleWidth / 2}
                   y={bodyTop}
                   width={candleWidth}
                   height={bodyH}
-                  fill={bull ? color : color}
+                  fill={color}
                   stroke={color}
                   strokeWidth={0.5}
                 />
@@ -633,7 +736,6 @@ function InteractiveChart({
             );
           })
         ) : (
-          // Line chart
           <>
             <defs>
               <linearGradient id="lineGrad" x1="0" x2="0" y1="0" y2="1">
@@ -642,13 +744,13 @@ function InteractiveChart({
               </linearGradient>
             </defs>
             <path
-              d={candles.map((c, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(c.close)}`).join(' ')
-                + ` L ${xScale(candles.length - 1)} ${dims.h - margin.bottom - volH}`
+              d={visibleCandles.map((c, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(c.close)}`).join(' ')
+                + ` L ${xScale(visibleCandles.length - 1)} ${dims.h - margin.bottom - volH}`
                 + ` L ${xScale(0)} ${dims.h - margin.bottom - volH} Z`}
               fill="url(#lineGrad)"
             />
             <path
-              d={candles.map((c, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(c.close)}`).join(' ')}
+              d={visibleCandles.map((c, i) => `${i === 0 ? 'M' : 'L'} ${xScale(i)} ${yScale(c.close)}`).join(' ')}
               fill="none"
               stroke={coinColor}
               strokeWidth={1.5}
@@ -666,21 +768,18 @@ function InteractiveChart({
         ))}
 
         {/* Crosshair */}
-        {hoveredIdx >= 0 && mousePos && (
+        {hoveredIdx >= 0 && mousePos && !isDragging.current && (
           <>
-            {/* Vertical line */}
             <line
               x1={xScale(hoveredIdx)} y1={margin.top}
               x2={xScale(hoveredIdx)} y2={dims.h - margin.bottom}
               stroke={dark ? '#444' : '#bbb'} strokeWidth={1} strokeDasharray="3,3"
             />
-            {/* Horizontal line */}
             <line
               x1={margin.left} y1={mousePos.y}
               x2={dims.w - margin.right} y2={mousePos.y}
               stroke={dark ? '#444' : '#bbb'} strokeWidth={1} strokeDasharray="3,3"
             />
-            {/* Price label on right axis */}
             <rect
               x={dims.w - margin.right}
               y={mousePos.y - 10}
@@ -696,8 +795,7 @@ function InteractiveChart({
             >
               {formatPrice(priceMin + (1 - (mousePos.y - margin.top) / (chartH - volH)) * priceRange)}
             </text>
-            {/* Time label on bottom */}
-            {candles[hoveredIdx] && (
+            {visibleCandles[hoveredIdx] && (
               <>
                 <rect
                   x={xScale(hoveredIdx) - 40}
@@ -712,14 +810,13 @@ function InteractiveChart({
                   y={dims.h - margin.bottom + 13}
                   fill="white" fontSize="9" textAnchor="middle" fontFamily="monospace"
                 >
-                  {formatTime(candles[hoveredIdx].time)}
+                  {formatTime(visibleCandles[hoveredIdx].time)}
                 </text>
               </>
             )}
-            {/* Dot on price */}
             <circle
               cx={xScale(hoveredIdx)}
-              cy={yScale(candles[hoveredIdx].close)}
+              cy={yScale(visibleCandles[hoveredIdx].close)}
               r={4}
               fill={coinColor}
               stroke={dark ? '#0f1117' : 'white'}
